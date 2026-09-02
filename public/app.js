@@ -72,7 +72,9 @@ function addTrace(item) {
 
 async function loadRuntime() {
   const payload = await request("/api/engines");
-  state.activeEngine = payload.activeEngine ?? "unknown";
+  // The fallback keeps the console usable while an already-running older gateway
+  // process is serving freshly updated static assets; new processes return activeEngine.
+  state.activeEngine = payload.activeEngine ?? payload.engines[0]?.name ?? "unknown";
   $("#active-engine").textContent = state.activeEngine === "opencode" ? "OpenCode" : state.activeEngine === "pi" ? "Pi Agent" : state.activeEngine;
   $("#engine-icon").textContent = state.activeEngine === "pi" ? "π" : state.activeEngine === "opencode" ? "OC" : "?";
   $("#route-engine").textContent = state.activeEngine.toUpperCase();
