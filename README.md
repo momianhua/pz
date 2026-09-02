@@ -138,9 +138,12 @@ LOCAL_MODEL_PROVIDER_ID=local-8017
 LOCAL_MODEL_ID=deepseek
 LOCAL_MODEL_API_KEY=local
 OPENCODE_AUTOSTART=true
+OPENCODE_PERMISSION_MODE=allow
 ```
 
 执行 `npm start` 后，网关会在被 `.gitignore` 排除的 `data/runtime/` 下自动生成 Pi 配置，并通过 `OPENCODE_CONFIG_CONTENT` 给自动启动的 OpenCode Server 注入同一 Provider。无需创建或编辑用户目录下的 `.pi`、`.config/opencode`。`PI_PROVIDER/PI_MODEL` 与 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 留空时自动继承统一配置。
+
+普通无人值守对话使用 `OPENCODE_PERMISSION_MODE=allow`，避免工具等待授权导致网关超时；仅在验证 `permission.asked` 流程时改为 `ask`，并通过官方 `/permission/{id}/reply` 接口回复。
 
 ### Pi Agent
 

@@ -12,6 +12,12 @@ function boolean(name, fallback = false) {
   return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
 }
 
+function choice(name, allowed, fallback) {
+  const value = process.env[name] || fallback;
+  if (!allowed.includes(value)) throw new Error(`${name} must be one of: ${allowed.join(", ")}`);
+  return value;
+}
+
 function commandLine(argv = process.argv.slice(2)) {
   const result = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,6 +60,7 @@ export function loadConfig(overrides = {}) {
     openCodeModelId: process.env.OPENCODE_MODEL_ID || (localModelBaseUrl ? localModelId : ""),
     openCodeCommand: process.env.OPENCODE_COMMAND ?? "opencode",
     openCodeAutostart: boolean("OPENCODE_AUTOSTART", false),
+    openCodePermissionMode: choice("OPENCODE_PERMISSION_MODE", ["allow", "ask", "deny"], "allow"),
     localModelBaseUrl,
     localModelProviderId,
     localModelId,

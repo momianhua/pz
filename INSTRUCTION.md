@@ -18,6 +18,8 @@ Copy-Item .env.example .env
 
 若使用 OpenAI 兼容的本地模型，无需编辑用户目录配置，只设置 `LOCAL_MODEL_BASE_URL`、`LOCAL_MODEL_PROVIDER_ID`、`LOCAL_MODEL_ID`、`LOCAL_MODEL_API_KEY`。设置 `OPENCODE_AUTOSTART=true` 后，`npm start` 会同时准备 Pi 配置并自动启动 OpenCode Server。
 
+普通自动化评测建议设置 `OPENCODE_PERMISSION_MODE=allow`。测试权限反问时改为 `ask`，并确保评测客户端在阻塞的 `prompt_async` 之外并发监听和回复 `/permission`。
+
 OpenCode 模式需先启动其本地 Server：
 
 ```powershell
