@@ -79,7 +79,16 @@ export function createHttpServer({ gateway, config }) {
 
       if (req.method === "GET" && url.pathname === "/api/engines") {
         const engines = await Promise.all(gateway.engines().map(async (metadata) => ({ ...metadata, health: await gateway.adapters.get(metadata.name).healthCheck() })));
-        return json(res, 200, { engines });
+        return json(res, 200, {
+          activeEngine: config.defaultEngine,
+          mode: config.engineMode,
+          switchMode: "startup",
+          model: {
+            providerID: config.defaultEngine === "pi" ? config.piProvider : config.openCodeProviderId,
+            modelID: config.defaultEngine === "pi" ? config.piModel : config.openCodeModelId,
+          },
+          engines,
+        });
       }
 
       if (req.method === "GET" && url.pathname === "/api/sessions") {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Switchboard · Multi-engine Agent Gateway</title>
+  <title>Agent Gateway · 评测控制台</title>
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -11,72 +11,96 @@
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark"><span></span><span></span></div>
-        <div><strong>Switchboard</strong><small>Agent Gateway</small></div>
+        <div><strong>Agent Gateway</strong><small>Competition Console</small></div>
       </div>
 
-      <section class="control-group">
-        <label for="tenant">租户</label>
-        <input id="tenant" value="demo-tenant" autocomplete="off">
-        <label for="conversation">会话</label>
-        <div class="input-action">
-          <input id="conversation" value="group-alpha" autocomplete="off">
-          <button id="new-session" class="icon-button" title="生成新会话">＋</button>
+      <section class="engine-panel first-panel">
+        <div class="section-title"><span>本次启动引擎</span><i id="health-dot"></i></div>
+        <div id="active-engine-card" class="active-engine-card">
+          <span id="engine-icon" class="engine-icon">—</span>
+          <span><strong id="active-engine">读取中</strong><small id="engine-detail">等待网关状态</small></span>
         </div>
-      </section>
-
-      <section class="engine-panel">
-        <div class="section-title"><span>执行引擎</span><i id="health-dot"></i></div>
-        <div id="engine-options" class="engine-options"></div>
-        <button id="switch-engine" class="secondary-button">切换当前会话</button>
+        <p class="panel-hint">评测要求通过 <code>--engine</code> 或 <code>AGENT_ENGINE</code> 在启动时切换；本页所有对话均由该引擎执行。</p>
+        <div id="engine-options" class="engine-health"></div>
       </section>
 
       <section class="session-panel">
-        <div class="section-title"><span>会话路由</span><button id="refresh-session">刷新</button></div>
+        <div class="section-title"><span>官方会话</span><button id="new-session">新建</button></div>
+        <label for="session-title">标题</label>
+        <input id="session-title" value="多引擎评测会话" autocomplete="off">
+        <label for="directory">工作目录（可选）</label>
+        <input id="directory" placeholder="例如 C:\project" autocomplete="off">
+        <button id="create-session" class="primary-side-button">POST /session</button>
         <dl>
-          <div><dt>逻辑会话</dt><dd id="logical-session">尚未创建</dd></div>
-          <div><dt>当前引擎</dt><dd id="active-engine">—</dd></div>
-          <div><dt>Pi 绑定</dt><dd id="pi-binding">—</dd></div>
-          <div><dt>OpenCode 绑定</dt><dd id="opencode-binding">—</dd></div>
+          <div><dt>Session ID</dt><dd id="session-id" title="点击复制">尚未创建</dd></div>
+          <div><dt>状态</dt><dd><span id="session-status" class="status-badge idle">—</span></dd></div>
+          <div><dt>消息数</dt><dd id="message-count">0</dd></div>
         </dl>
       </section>
 
-      <div class="sidebar-footer"><span id="mode-badge">LOADING</span><span>统一协议 v1</span></div>
+      <section class="model-panel">
+        <div class="section-title"><span>请求模型参数</span></div>
+        <label for="provider-id">providerID</label>
+        <input id="provider-id" value="local-openai" autocomplete="off">
+        <label for="model-id">modelID</label>
+        <input id="model-id" value="deepseek" autocomplete="off">
+      </section>
+
+      <div class="sidebar-footer"><span id="mode-badge">LOADING</span><span>SPEC v1.1</span></div>
     </aside>
 
     <main class="workspace">
       <header>
         <div>
-          <p class="eyebrow">MULTI-ENGINE CONVERSATION</p>
-          <h1>同一会话，自由切换执行引擎</h1>
+          <p class="eyebrow">OFFICIAL GATEWAY API</p>
+          <h1>评测接口对话控制台</h1>
+          <p class="subtitle">页面与评测程序共享同一套会话、消息、SSE、反问和权限数据。</p>
         </div>
-        <button id="toggle-events" class="ghost-button"><span class="pulse"></span>事件流</button>
+        <div class="header-actions">
+          <button id="refresh-messages" class="ghost-button">刷新消息</button>
+          <button id="toggle-events" class="ghost-button"><span id="sse-dot" class="pulse"></span>接口轨迹</button>
+        </div>
       </header>
 
       <div id="notice" class="notice hidden"></div>
       <section id="messages" class="messages" aria-live="polite">
         <div class="welcome">
-          <div class="route-visual"><b>业务请求</b><span>→</span><b>Agent Gateway</b><span>→</span><b id="welcome-engine">Pi</b></div>
-          <h2>准备就绪</h2>
-          <p>先用 Pi 对话，再切换到 OpenCode。网关会保持业务会话不变，并为两种传输协议维护隔离的原生 session。</p>
+          <div class="route-visual"><b>浏览器</b><span>→</span><b>官方接口</b><span>→</span><b id="welcome-engine">Agent Engine</b></div>
+          <h2>先创建评测会话</h2>
+          <p>点击左侧 <b>POST /session</b>，发送消息时会调用 <code>/session/{id}/prompt_async</code>；完成后可直接通过 <code>/session/{id}/message</code> 查询同一份记录。</p>
           <div class="suggestions">
-            <button>记住：本群项目代号是“星桥”</button>
-            <button>请总结当前会话，并告诉我由哪个引擎执行</button>
+            <button>你好，请介绍一下你自己</button>
+            <button>读取当前工作目录并列出文件</button>
           </div>
         </div>
       </section>
 
+      <section id="interactions" class="interactions hidden"></section>
+
       <form id="composer" class="composer">
-        <textarea id="prompt" rows="1" placeholder="输入消息，Enter 发送，Shift + Enter 换行"></textarea>
+        <textarea id="prompt" rows="1" placeholder="输入评测消息，Enter 发送，Shift + Enter 换行"></textarea>
         <div class="composer-footer">
-          <div class="route-chip"><span>ROUTE</span><strong id="route-engine">PI</strong></div>
-          <button id="send" type="submit">发送 <span>↗</span></button>
+          <div class="route-chip"><span id="endpoint-label">请先创建会话</span><strong id="route-engine">—</strong></div>
+          <div class="composer-actions">
+            <button id="abort" type="button" class="abort-button hidden">中止</button>
+            <button id="send" type="submit">发送 <span>↗</span></button>
+          </div>
         </div>
       </form>
     </main>
 
     <aside id="events-drawer" class="events-drawer">
-      <div class="drawer-header"><div><p class="eyebrow">NORMALIZED EVENTS</p><h2>网关事件流</h2></div><button id="close-events">×</button></div>
-      <div id="events" class="events"><p class="empty-events">发送消息后，这里会展示两个引擎被标准化后的统一事件。</p></div>
+      <div class="drawer-header">
+        <div><p class="eyebrow">HTTP + SERVER-SENT EVENTS</p><h2>评测接口轨迹</h2></div>
+        <button id="close-events" aria-label="关闭">×</button>
+      </div>
+      <div class="api-summary">
+        <span><i class="method post">POST</i> /session</span>
+        <span><i class="method post">POST</i> /session/{id}/prompt_async</span>
+        <span><i class="method get">GET</i> /session/{id}/message</span>
+        <span><i class="method sse">SSE</i> /event</span>
+      </div>
+      <div id="events" class="events"><p class="empty-events">正在连接 <code>GET /event</code>…</p></div>
     </aside>
   </div>
   <script type="module" src="/app.js"></script>

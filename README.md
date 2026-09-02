@@ -2,7 +2,7 @@
 
 这是一个面向 AI 争霸赛的可运行参考实现：业务系统只调用稳定的 Agent Gateway 接口，网关通过统一 Engine Adapter SPI 接入 **Pi Agent** 与 **OpenCode**。Pi 使用 JSONL/RPC 子进程协议，OpenCode 使用 HTTP/OpenAPI 与 SSE，会话、事件和错误在网关层被统一。
 
-项目内置一个聊天界面，可直观看到引擎切换、逻辑会话、原生 session 绑定及标准化事件流。
+项目内置“评测接口对话控制台”。页面不再维护独立的演示消息，而是直接调用赛题规定的 `/session`、`/prompt_async`、`/message`、`/event`、`/question` 和 `/permission`：页面看到的 Session ID 和消息可被评测接口原样查询。
 
 ## 30 秒启动
 
@@ -24,12 +24,13 @@ docker compose up --build
 
 ## 演示路径
 
-1. 保持 `group-alpha` 和 Pi，发送“记住：本群项目代号是星桥”；
-2. 选择 OpenCode，点击“切换当前会话”；
-3. 发送“继续刚才的任务”；
-4. 观察逻辑会话 ID 不变，同时出现 Pi 与 OpenCode 两个原生 session 绑定；
-5. 打开“事件流”，观察两个引擎都输出统一的 `message.delta` 等事件；
-6. 更换会话 ID 再提问，证明群会话之间隔离。
+1. 使用 `npm start -- --engine pi` 启动，在页面左侧点击 `POST /session`；
+2. 发送消息，观察 `busy → idle` 状态和 `message.part.updated` SSE；
+3. 复制页面 Session ID，调用 `GET /session/{id}/message`，确认能查到页面中的同一组消息；
+4. 使用 `npm start -- --engine opencode` 重启，再重复相同评测流程；
+5. 将 `OPENCODE_PERMISSION_MODE=ask` 后测试工具操作，可在页面直接处理 `/permission` 权限申请和 `/question` 反问。
+
+赛题规范要求在不同评测轮次通过启动参数切换引擎，而不是在同一网关进程中动态切换；页面会明确显示本次启动所用引擎。额外的 `/api/chat` 和会话级切换接口仍保留，供架构扩展测试使用。
 
 命令行自动演示：
 

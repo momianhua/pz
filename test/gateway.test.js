@@ -85,7 +85,7 @@ test("engine allowlist is enforced by gateway", async () => {
   } finally { await f.close(); }
 });
 
-test("OpenAI-compatible endpoint and chat UI are available", async () => {
+test("OpenAI-compatible endpoint and official API console are available", async () => {
   const f = await fixture();
   try {
     const completion = await post(`${f.baseUrl}/v1/chat/completions`, {
@@ -98,6 +98,9 @@ test("OpenAI-compatible endpoint and chat UI are available", async () => {
     assert.match(completion.body.choices[0].message.content, /opencode/);
     const ui = await fetch(f.baseUrl);
     assert.equal(ui.status, 200);
-    assert.match(await ui.text(), /Switchboard/);
+    assert.match(await ui.text(), /评测接口对话控制台/);
+    const runtime = await fetch(`${f.baseUrl}/api/engines`).then((response) => response.json());
+    assert.equal(runtime.activeEngine, "pi");
+    assert.equal(runtime.switchMode, "startup");
   } finally { await f.close(); }
 });

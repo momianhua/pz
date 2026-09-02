@@ -93,4 +93,4 @@ Invoke-RestMethod "http://localhost:6217/session/$($session.id)/message"
 - 会话状态：`GET /session/status`
 - 本地会话映射（运行时生成，可选）：`data/state.json`
 
-网页展示界面位于 `http://localhost:6217/`，不参与自动评测。
+网页展示界面位于 `http://localhost:6217/`。它直接使用官方评测接口，因此页面创建的 Session ID、消息、状态、反问和权限申请都可通过对应评测接口查询；页面本身不影响自动评测。
