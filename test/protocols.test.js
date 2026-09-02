@@ -1,0 +1,113 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { PassThrough, Readable } from "node:stream";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { attachStrictJsonlReader, mapPiEvent } from "../src/adapters/pi-rpc-adapter.js";
+import { OpenCodeHttpAdapter, mapOpenCodeEvent, parseSse } from "../src/adapters/opencode-http-adapter.js";
+import { collectEvents } from "../src/core/events.js";
+
+test("Pi JSONL parser splits only on LF and preserves Unicode separators", async () => {
+  const stream = new PassThrough();
+  const values = [];
+  const errors = [];
+  attachStrictJsonlReader(stream, (value) => values.push(value), (error) => errors.push(error));
+  stream.end('{"text":"left\u2028right"}\r\n{"ok":true}\n');
+  await new Promise((resolve) => stream.on("end", resolve));
+  assert.deepEqual(values, [{ text: "left right" }, { ok: true }]);
+  assert.equal(errors.length, 0);
+});
+
+test("Pi and OpenCode native deltas map to the same canonical event", () => {
+  const pi = mapPiEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hi" } }, "r1");
+  const opencode = mapOpenCodeEvent({ type: "message.part.delta", properties: { sessionID: "s1", field: "text", delta: "hi" } }, "r2");
+  assert.equal(pi.type, "message.delta");
+  assert.equal(opencode.type, "message.delta");
+  assert.equal(pi.data.delta, opencode.data.delta);
+});
+
+test("OpenCode SSE parser supports named events and multiline data", async () => {
+  const source = Readable.from([Buffer.from('event: message\r\ndata: {"type":"message.part.delta",\r\ndata: "properties":{"delta":"hello"}}\r\n\r\n')]);
+  const events = [];
+  for await (const item of parseSse(source)) events.push(item);
+  assert.deepEqual(events, [{ event: "message", data: '{"type":"message.part.delta",\n"properties":{"delta":"hello"}}' }]);
+});
+
+test("OpenCode adapter filters global events and combines SSE with final response", async () => {
+  const eventClients = new Set();
+  let deleted = false;
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, "http://localhost");
+    assert.equal(url.searchParams.get("directory"), "C:\\contest");
+    assert.equal(request.headers.authorization, `Basic ${Buffer.from("opencode:secret").toString("base64")}`);
+    if (request.method === "GET" && url.pathname === "/global/health") {
+      response.setHeader("Content-Type", "application/json");
+      response.end('{"healthy":true,"version":"test"}');
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/session") {
+      response.setHeader("Content-Type", "application/json");
+      response.end('{"id":"ses-test"}');
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/event") {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.flushHeaders();
+      eventClients.add(response);
+      request.on("close", () => eventClients.delete(response));
+      response.write('data: {"type":"server.connected","properties":{}}\n\n');
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/session/ses-test/message") {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      assert.match(body, /当前请求/);
+      for (const client of eventClients) {
+        client.write('data: {"type":"message.part.delta","properties":{"sessionID":"another-session","field":"text","delta":"leak"}}\n\n');
+        client.write('data: {"type":"message.part.delta","properties":{"sessionID":"ses-test","field":"text","delta":"hello "}}\n\n');
+        client.write('data: {"type":"message.part.delta","properties":{"sessionID":"ses-test","field":"text","delta":"world"}}\n\n');
+      }
+      response.setHeader("Content-Type", "application/json");
+      response.end('{"parts":[{"type":"text","text":"hello world"}]}');
+      return;
+    }
+    if (request.method === "DELETE" && url.pathname === "/session/ses-test") {
+      deleted = true;
+      response.end("true");
+      return;
+    }
+    response.statusCode = 404;
+    response.end("missing");
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const adapter = new OpenCodeHttpAdapter({
+    openCodeBaseUrl: `http://127.0.0.1:${server.address().port}`,
+    openCodeUsername: "opencode",
+    openCodePassword: "secret",
+    openCodeDirectory: "C:\\contest",
+    openCodeProviderId: "",
+    openCodeModelId: "",
+  });
+  try {
+    const health = await adapter.healthCheck();
+    assert.equal(health.status, "healthy");
+    const session = await adapter.createSession({ logicalSessionId: "logical-test" });
+    assert.equal(session.id, "ses-test");
+    const result = await collectEvents(adapter.run({
+      runId: "run-test",
+      engineSessionId: session.id,
+      input: "continue",
+      importedHistory: [{ role: "user", content: "previous" }],
+    }));
+    assert.equal(result.text, "hello world");
+    assert.doesNotMatch(result.text, /leak/);
+    assert.equal(result.events.filter((item) => item.type === "message.delta").length, 2);
+    await adapter.closeSession(session.id);
+    assert.equal(deleted, true);
+  } finally {
+    for (const client of eventClients) client.end();
+    server.close();
+    await once(server, "close");
+  }
+});

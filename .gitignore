@@ -1,0 +1,6 @@
+.env
+data/state.json
+data/state.json.tmp
+data/pi-sessions/
+node_modules/
+*.log

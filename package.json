@@ -1,0 +1,21 @@
+{
+  "name": "multi-engine-agent-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A pluggable Agent Gateway reference implementation for OpenCode and Pi Agent.",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "start:pi": "node --env-file-if-exists=.env src/server.js --engine pi --port 6217 --host localhost",
+    "start:opencode": "node --env-file-if-exists=.env src/server.js --engine opencode --port 6217 --host localhost",
+    "dev": "node --env-file-if-exists=.env --watch src/server.js",
+    "test": "node --test",
+    "demo": "node scripts/demo.js"
+  },
+  "bin": {
+    "gateway": "src/server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Switchboard · Multi-engine Agent Gateway</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><span></span><span></span></div>
+        <div><strong>Switchboard</strong><small>Agent Gateway</small></div>
+      </div>
+
+      <section class="control-group">
+        <label for="tenant">租户</label>
+        <input id="tenant" value="demo-tenant" autocomplete="off">
+        <label for="conversation">会话</label>
+        <div class="input-action">
+          <input id="conversation" value="group-alpha" autocomplete="off">
+          <button id="new-session" class="icon-button" title="生成新会话">＋</button>
+        </div>
+      </section>
+
+      <section class="engine-panel">
+        <div class="section-title"><span>执行引擎</span><i id="health-dot"></i></div>
+        <div id="engine-options" class="engine-options"></div>
+        <button id="switch-engine" class="secondary-button">切换当前会话</button>
+      </section>
+
+      <section class="session-panel">
+        <div class="section-title"><span>会话路由</span><button id="refresh-session">刷新</button></div>
+        <dl>
+          <div><dt>逻辑会话</dt><dd id="logical-session">尚未创建</dd></div>
+          <div><dt>当前引擎</dt><dd id="active-engine">—</dd></div>
+          <div><dt>Pi 绑定</dt><dd id="pi-binding">—</dd></div>
+          <div><dt>OpenCode 绑定</dt><dd id="opencode-binding">—</dd></div>
+        </dl>
+      </section>
+
+      <div class="sidebar-footer"><span id="mode-badge">LOADING</span><span>统一协议 v1</span></div>
+    </aside>
+
+    <main class="workspace">
+      <header>
+        <div>
+          <p class="eyebrow">MULTI-ENGINE CONVERSATION</p>
+          <h1>同一会话，自由切换执行引擎</h1>
+        </div>
+        <button id="toggle-events" class="ghost-button"><span class="pulse"></span>事件流</button>
+      </header>
+
+      <div id="notice" class="notice hidden"></div>
+      <section id="messages" class="messages" aria-live="polite">
+        <div class="welcome">
+          <div class="route-visual"><b>业务请求</b><span>→</span><b>Agent Gateway</b><span>→</span><b id="welcome-engine">Pi</b></div>
+          <h2>准备就绪</h2>
+          <p>先用 Pi 对话，再切换到 OpenCode。网关会保持业务会话不变，并为两种传输协议维护隔离的原生 session。</p>
+          <div class="suggestions">
+            <button>记住：本群项目代号是“星桥”</button>
+            <button>请总结当前会话，并告诉我由哪个引擎执行</button>
+          </div>
+        </div>
+      </section>
+
+      <form id="composer" class="composer">
+        <textarea id="prompt" rows="1" placeholder="输入消息，Enter 发送，Shift + Enter 换行"></textarea>
+        <div class="composer-footer">
+          <div class="route-chip"><span>ROUTE</span><strong id="route-engine">PI</strong></div>
+          <button id="send" type="submit">发送 <span>↗</span></button>
+        </div>
+      </form>
+    </main>
+
+    <aside id="events-drawer" class="events-drawer">
+      <div class="drawer-header"><div><p class="eyebrow">NORMALIZED EVENTS</p><h2>网关事件流</h2></div><button id="close-events">×</button></div>
+      <div id="events" class="events"><p class="empty-events">发送消息后，这里会展示两个引擎被标准化后的统一事件。</p></div>
+    </aside>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

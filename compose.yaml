@@ -1,0 +1,13 @@
+services:
+  gateway:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      ENGINE_MODE: mock
+      DEFAULT_ENGINE: pi
+    volumes:
+      - gateway-data:/app/data
+
+volumes:
+  gateway-data:
