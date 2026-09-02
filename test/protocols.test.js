@@ -4,7 +4,7 @@ import { PassThrough, Readable } from "node:stream";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { attachStrictJsonlReader, mapPiEvent } from "../src/adapters/pi-rpc-adapter.js";
-import { OpenCodeHttpAdapter, mapOpenCodeEvent, parseSse } from "../src/adapters/opencode-http-adapter.js";
+import { OpenCodeHttpAdapter, mapOpenCodeEvent, openCodeErrorMessage, parseSse } from "../src/adapters/opencode-http-adapter.js";
 import { collectEvents } from "../src/core/events.js";
 
 test("Pi JSONL parser splits only on LF and preserves Unicode separators", async () => {
@@ -24,6 +24,17 @@ test("Pi and OpenCode native deltas map to the same canonical event", () => {
   assert.equal(pi.type, "message.delta");
   assert.equal(opencode.type, "message.delta");
   assert.equal(pi.data.delta, opencode.data.delta);
+});
+
+test("OpenCode nested session errors remain readable", () => {
+  const nested = {
+    name: "ProviderAuthError",
+    data: { error: { message: "401 invalid authentication header" } },
+  };
+  assert.equal(openCodeErrorMessage(nested), "ProviderAuthError: 401 invalid authentication header");
+  const mapped = mapOpenCodeEvent({ type: "session.error", properties: { error: nested } }, "r-error");
+  assert.equal(mapped.data.message, "ProviderAuthError: 401 invalid authentication header");
+  assert.doesNotMatch(mapped.data.message, /\[object Object\]/);
 });
 
 test("OpenCode SSE parser supports named events and multiline data", async () => {

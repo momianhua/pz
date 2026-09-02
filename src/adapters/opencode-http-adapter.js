@@ -69,6 +69,36 @@ function messageText(payload) {
     .join("");
 }
 
+function nestedErrorMessage(value, seen = new Set(), depth = 0) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!value || typeof value !== "object" || depth > 6 || seen.has(value)) return null;
+  seen.add(value);
+
+  for (const key of ["message", "detail", "statusText", "responseBody", "body"]) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  for (const key of ["error", "cause", "data", "response"]) {
+    const candidate = nestedErrorMessage(value[key], seen, depth + 1);
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+export function openCodeErrorMessage(error) {
+  if (typeof error === "string" && error.trim()) return error.trim();
+  const message = nestedErrorMessage(error);
+  const name = typeof error?.name === "string" ? error.name.trim() : "";
+  if (message) return name && !message.toLowerCase().includes(name.toLowerCase()) ? `${name}: ${message}` : message;
+  try {
+    const serialized = JSON.stringify(error);
+    if (serialized && serialized !== "{}") return serialized;
+  } catch {
+    // Circular provider errors still receive a useful generic message.
+  }
+  return name || "OpenCode session failed";
+}
+
 export function mapOpenCodeEvent(payload, runId) {
   const type = payload?.type;
   const properties = payload?.properties ?? {};
@@ -111,7 +141,7 @@ export function mapOpenCodeEvent(payload, runId) {
     return event("tool.completed", "opencode", runId, { ...base, ...properties });
   }
   if (type === "session.error") {
-    return event("run.warning", "opencode", runId, { ...base, message: properties.error?.message ?? properties.error ?? "OpenCode session failed" });
+    return event("run.warning", "opencode", runId, { ...base, message: openCodeErrorMessage(properties.error) });
   }
   return null;
 }
@@ -338,7 +368,7 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
           yield mapped;
         }
         if (accepted && item.payload?.type === "session.error") {
-          const message = item.payload.properties?.error?.message ?? item.payload.properties?.error ?? "OpenCode session failed";
+          const message = openCodeErrorMessage(item.payload.properties?.error);
           throw new GatewayError("ENGINE_ERROR", `OpenCode session failed: ${message}`, 502, item.payload.properties);
         }
         const isIdle = item.payload?.type === "session.idle"
