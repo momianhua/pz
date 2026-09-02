@@ -16,6 +16,8 @@ Copy-Item .env.example .env
 
 编辑 `.env`，把 `PI_PROVIDER`、`PI_MODEL`、`OPENCODE_PROVIDER_ID`、`OPENCODE_MODEL_ID` 配置为实际可用的 Provider/Model ID，并按模型服务说明配置对应 API Key。调试阶段可使用任意模型，正式比赛可切换到推荐的 GLM5.2。禁止把真实密钥写入提交包。
 
+若使用 OpenAI 兼容的本地模型，无需编辑用户目录配置，只设置 `LOCAL_MODEL_BASE_URL`、`LOCAL_MODEL_PROVIDER_ID`、`LOCAL_MODEL_ID`、`LOCAL_MODEL_API_KEY`。设置 `OPENCODE_AUTOSTART=true` 后，`npm start` 会同时准备 Pi 配置并自动启动 OpenCode Server。
+
 OpenCode 模式需先启动其本地 Server：
 
 ```powershell

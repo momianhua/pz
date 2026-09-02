@@ -10,6 +10,7 @@ async function shutdown(signal) {
   console.log(`\nReceived ${signal}; shutting down...`);
   app.server.close();
   await app.gateway.shutdown();
+  app.openCodeServer.stop();
   process.exit(0);
 }
 

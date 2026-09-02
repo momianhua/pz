@@ -143,7 +143,7 @@ export class PiRpcAdapter extends EngineAdapter {
         clearTimeout(timeout);
         resolveHealth(result);
       };
-      const child = spawn(this.command, [...this.commandArgs, "--version"], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      const child = spawn(this.command, [...this.commandArgs, "--version"], { env: this.childEnvironment(), stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
       child.stdout.on("data", (chunk) => { output += chunk; });
       child.stderr.on("data", (chunk) => { output += chunk; });
       child.on("error", (error) => finish({ status: "unhealthy", detail: error.message }));
@@ -163,6 +163,16 @@ export class PiRpcAdapter extends EngineAdapter {
     return { id, logicalSessionId };
   }
 
+  childEnvironment() {
+    return {
+      ...process.env,
+      ...(this.config.localModelBaseUrl ? {
+        PI_CODING_AGENT_DIR: this.config.piAgentDir,
+        LOCAL_MODEL_API_KEY: this.config.localModelApiKey,
+      } : {}),
+    };
+  }
+
   async ensureProcess(engineSessionId) {
     const existing = this.processes.get(engineSessionId);
     if (existing && !existing.closed) return existing;
@@ -174,7 +184,7 @@ export class PiRpcAdapter extends EngineAdapter {
     if (this.config.piProvider) args.push("--provider", this.config.piProvider);
     if (this.config.piModel) args.push("--model", this.config.piModel);
     const workingDirectory = this.sessionDirectories.get(engineSessionId) || undefined;
-    const child = spawn(this.command, [...this.commandArgs, ...args], { cwd: workingDirectory, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(this.command, [...this.commandArgs, ...args], { cwd: workingDirectory, env: this.childEnvironment(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     const process = new PiProcess(child, engineSessionId);
     child.on("error", (error) => process.push({ type: "process_exit", code: -1, stderr: error.message }));
     this.processes.set(engineSessionId, process);

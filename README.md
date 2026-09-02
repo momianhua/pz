@@ -127,6 +127,21 @@ Copy-Item .env.example .env
 
 将 `.env` 中的 `ENGINE_MODE` 改为 `real`。
 
+### 本地 OpenAI 兼容模型（无需修改用户目录）
+
+如果本地模型提供 `/v1/chat/completions`，只需在项目 `.env` 配置：
+
+```dotenv
+ENGINE_MODE=real
+LOCAL_MODEL_BASE_URL=http://127.0.0.1:8017/v1
+LOCAL_MODEL_PROVIDER_ID=local-8017
+LOCAL_MODEL_ID=deepseek
+LOCAL_MODEL_API_KEY=local
+OPENCODE_AUTOSTART=true
+```
+
+执行 `npm start` 后，网关会在被 `.gitignore` 排除的 `data/runtime/` 下自动生成 Pi 配置，并通过 `OPENCODE_CONFIG_CONTENT` 给自动启动的 OpenCode Server 注入同一 Provider。无需创建或编辑用户目录下的 `.pi`、`.config/opencode`。`PI_PROVIDER/PI_MODEL` 与 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 留空时自动继承统一配置。
+
 ### Pi Agent
 
 根据 [Pi 官方文档](https://pi.dev/docs/latest)，安装命令为：

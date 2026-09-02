@@ -2,5 +2,6 @@
 data/state.json
 data/state.json.tmp
 data/pi-sessions/
+data/runtime/
 node_modules/
 *.log
