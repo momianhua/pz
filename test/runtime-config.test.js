@@ -28,7 +28,7 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
 
     const openCode = JSON.parse(openCodeInlineConfig(config));
     assert.equal(openCode.provider["local-8017"].options.baseURL, "http://127.0.0.1:8017/v1");
-    assert.equal(openCode.provider["local-8017"].options.apiKey, "{env:LOCAL_MODEL_API_KEY}");
+    assert.equal(openCode.provider["local-8017"].options.apiKey, undefined);
     assert.equal(openCode.provider["local-8017"].options.headers.Auth, "{env:LOCAL_MODEL_AUTH_VALUE}");
     assert.equal(openCode.permission["*"], "ask");
     assert.equal(openCode.permission.question, "allow");

@@ -27,7 +27,7 @@ export function openCodeInlineConfig(config) {
         name: `Local model (${model.baseUrl})`,
         options: {
           baseURL: model.baseUrl,
-          apiKey: "{env:LOCAL_MODEL_API_KEY}",
+          ...(!model.authHeader ? { apiKey: "{env:LOCAL_MODEL_API_KEY}" } : {}),
           ...(model.authHeader ? { headers: { [model.authHeader]: "{env:LOCAL_MODEL_AUTH_VALUE}" } } : {}),
         },
         models: {

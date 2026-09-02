@@ -152,7 +152,7 @@ LOCAL_MODEL_AUTH_HEADER=Auth
 LOCAL_MODEL_AUTH_VALUE=
 ```
 
-该 Header 会同时注入 Pi 和 OpenCode 的模型请求，不需要手工修改任何引擎配置文件。自定义 Header 启用后，Pi 不再额外生成标准 Authorization Header。
+该 Header 会同时注入 Pi 和 OpenCode 的模型请求，不需要手工修改任何引擎配置文件。自定义 Header 启用后，两种引擎都不再额外生成标准 Authorization Header。
 
 普通无人值守对话使用 `OPENCODE_PERMISSION_MODE=allow`；网关既会把该策略注入自己启动的 OpenCode Server，也会在连接外部 OpenCode 时自动处理意外到达的权限事件，因此这些请求不会进入网关 `/permission` 队列。验证权限流程时改为 `ask`，可通过 `/permission/{id}/reply` 回复。回复接口是幂等的，OpenCode 已处理的请求会从网关队列自动清除。
 
