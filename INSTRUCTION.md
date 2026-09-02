@@ -60,6 +60,8 @@ npm start
 
 日志出现 `Agent Gateway engine=<引擎> ... localhost:6217` 表示启动完成。`GET http://localhost:6217/health` 返回 `status=ok` 可作为健康检查。
 
+OpenCode 轮次建议配置 `OPENCODE_AUTOSTART=true`，并确保 4096 端口没有旧的手工 OpenCode 进程。`OPENCODE_PERMISSION_MODE=allow` 会自动处理权限请求且不加入 `/permission` 队列；需要评测权限交互时使用 `ask`。长任务默认允许执行 10 分钟，可通过 `RUN_TIMEOUT_MS` 调整。
+
 ## 4. 官方接口执行顺序
 
 1. `POST /session?directory=<工作目录>`，请求体 `{"title":"评测会话"}`。

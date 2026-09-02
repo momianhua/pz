@@ -36,6 +36,7 @@ test("OpenCode SSE parser supports named events and multiline data", async () =>
 test("OpenCode adapter filters global events and combines SSE with final response", async () => {
   const eventClients = new Set();
   let deleted = false;
+  let permissionReplies = 0;
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     assert.equal(url.searchParams.get("directory"), "C:\\contest");
@@ -58,17 +59,44 @@ test("OpenCode adapter filters global events and combines SSE with final respons
       response.write('data: {"type":"server.connected","properties":{}}\n\n');
       return;
     }
-    if (request.method === "POST" && url.pathname === "/session/ses-test/message") {
+    if (request.method === "POST" && url.pathname === "/session/ses-test/prompt_async") {
       let body = "";
       for await (const chunk of request) body += chunk;
       assert.match(body, /当前请求/);
       for (const client of eventClients) {
+        client.write('data: {"type":"session.status","properties":{"sessionID":"ses-test","status":{"type":"busy"}}}\n\n');
         client.write('data: {"type":"message.part.delta","properties":{"sessionID":"another-session","field":"text","delta":"leak"}}\n\n');
         client.write('data: {"type":"message.part.delta","properties":{"sessionID":"ses-test","field":"text","delta":"hello "}}\n\n');
         client.write('data: {"type":"message.part.delta","properties":{"sessionID":"ses-test","field":"text","delta":"world"}}\n\n');
+        client.write('data: {"type":"permission.asked","properties":{"id":"per-test","sessionID":"ses-test","permission":"bash","patterns":["echo *"]}}\n\n');
+      }
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/permission/per-test/reply") {
+      permissionReplies += 1;
+      for (const client of eventClients) {
+        client.write('data: {"type":"permission.replied","properties":{"permissionID":"per-test","sessionID":"ses-test","response":"once"}}\n\n');
+        client.write('data: {"type":"session.idle","properties":{"sessionID":"ses-test"}}\n\n');
       }
       response.setHeader("Content-Type", "application/json");
-      response.end('{"parts":[{"type":"text","text":"hello world"}]}');
+      response.end('{"ok":true}');
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/permission/already-done/reply") {
+      response.statusCode = 404;
+      response.end("permission request not found: already-done");
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/session/ses-test/message") {
+      response.setHeader("Content-Type", "application/json");
+      response.end('[{"info":{"role":"user"},"parts":[{"type":"text","text":"continue"}]},{"info":{"role":"assistant"},"parts":[{"type":"text","text":"hello world"}]}]');
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/permission") {
+      response.setHeader("Content-Type", "application/json");
+      response.end("[]");
       return;
     }
     if (request.method === "DELETE" && url.pathname === "/session/ses-test") {
@@ -88,6 +116,7 @@ test("OpenCode adapter filters global events and combines SSE with final respons
     openCodeDirectory: "C:\\contest",
     openCodeProviderId: "",
     openCodeModelId: "",
+    openCodePermissionMode: "allow",
   });
   try {
     const health = await adapter.healthCheck();
@@ -103,6 +132,9 @@ test("OpenCode adapter filters global events and combines SSE with final respons
     assert.equal(result.text, "hello world");
     assert.doesNotMatch(result.text, /leak/);
     assert.equal(result.events.filter((item) => item.type === "message.delta").length, 2);
+    assert.equal(result.events.filter((item) => item.type === "permission.requested").length, 0);
+    assert.equal(permissionReplies, 1);
+    assert.deepEqual(await adapter.replyPermission(session.id, "already-done", { reply: "once" }), { ok: true, alreadyResolved: true });
     await adapter.closeSession(session.id);
     assert.equal(deleted, true);
   } finally {

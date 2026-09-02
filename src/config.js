@@ -46,7 +46,7 @@ export function loadConfig(overrides = {}) {
     engineMode: process.env.ENGINE_MODE ?? "mock",
     stateFile: resolve(process.env.STATE_FILE ?? "./data/state.json"),
     maxBodyBytes: integer("MAX_BODY_BYTES", 1_048_576),
-    runTimeoutMs: integer("RUN_TIMEOUT_MS", 120_000),
+    runTimeoutMs: integer("RUN_TIMEOUT_MS", 600_000),
     piCommand: process.env.PI_COMMAND ?? "pi",
     piProvider: process.env.PI_PROVIDER || (localModelBaseUrl ? localModelProviderId : ""),
     piModel: process.env.PI_MODEL || (localModelBaseUrl ? localModelId : ""),

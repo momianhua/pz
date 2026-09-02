@@ -28,6 +28,8 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     assert.equal(openCode.provider["local-8017"].options.apiKey, "{env:LOCAL_MODEL_API_KEY}");
     assert.equal(openCode.permission["*"], "ask");
     assert.equal(openCode.permission.question, "allow");
+    assert.equal(JSON.parse(openCodeInlineConfig({ ...config, openCodePermissionMode: "allow" })).permission, "allow");
+    assert.equal(JSON.parse(openCodeInlineConfig({ ...config, localModelBaseUrl: "" })).permission["*"], "ask");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -132,6 +132,15 @@ export class AgentGateway {
     return this.#replyInteraction(tenantId, conversationId, "replyPermission", requestId, { reply, message });
   }
 
+  async isPermissionPending(tenantId, conversationId, requestId) {
+    const session = this.store.get(tenantId, conversationId);
+    if (!session) return false;
+    const adapter = this.adapters.get(session.activeEngine);
+    const binding = session.bindings[session.activeEngine];
+    if (!binding || typeof adapter?.isPermissionPending !== "function") return true;
+    return adapter.isPermissionPending(binding.engineSessionId, requestId);
+  }
+
   async #replyInteraction(tenantId, conversationId, method, requestId, payload) {
     const session = this.store.get(tenantId, conversationId);
     if (!session) throw new GatewayError("NOT_FOUND", "Session not found", 404);

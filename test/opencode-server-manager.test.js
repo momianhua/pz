@@ -15,6 +15,7 @@ test("managed OpenCode startup rejects a stale server without the configured loc
   await once(server, "listening");
   const manager = new OpenCodeServerManager({
     openCodeAutostart: true,
+    defaultEngine: "opencode",
     openCodeBaseUrl: `http://127.0.0.1:${server.address().port}`,
     openCodeDirectory: process.cwd(),
     openCodeUsername: "opencode",

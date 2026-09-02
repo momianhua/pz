@@ -154,6 +154,12 @@ export class CompetitionApi {
       }
 
       if (req.method === "GET" && url.pathname === "/permission") {
+        for (const [requestId, request] of this.permissions) {
+          try {
+            const pending = await this.gateway.isPermissionPending(request._tenantId, request._conversationId, requestId);
+            if (!pending) this.permissions.delete(requestId);
+          } catch { /* Keep the local request if OpenCode is temporarily unreachable. */ }
+        }
         sendJson(res, 200, [...this.permissions.values()].map((request) => this.publicInteraction(request)));
         return true;
       }
@@ -287,7 +293,10 @@ export class CompetitionApi {
       };
       this.permissions.set(id, request);
       this.emit("permission.asked", { sessionID: session.id, id, permission: request.permission, patterns: request.patterns });
+      return;
     }
+    if (item.type === "permission.resolved") this.permissions.delete(item.data.requestId);
+    if (item.type === "question.resolved") this.questions.delete(item.data.requestId);
   }
 
   consumeExternalEvent({ tenantId, conversationId }, item) {
@@ -311,6 +320,9 @@ export class CompetitionApi {
       };
       this.permissions.set(id, request);
       this.emit("permission.asked", { sessionID: conversationId, id, permission: request.permission, patterns: request.patterns });
+      return;
     }
+    if (item.type === "permission.resolved") this.permissions.delete(item.data.requestId);
+    if (item.type === "question.resolved") this.questions.delete(item.data.requestId);
   }
 }

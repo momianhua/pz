@@ -54,7 +54,7 @@ export class OpenCodeServerManager {
   }
 
   async start() {
-    if (!this.config.openCodeAutostart) return;
+    if (!this.config.openCodeAutostart || this.config.defaultEngine !== "opencode") return;
     try {
       const response = await fetch(`${this.config.openCodeBaseUrl}/global/health`, { headers: this.healthHeaders(), signal: AbortSignal.timeout(1000) });
       if (response.ok) {

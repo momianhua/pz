@@ -80,10 +80,29 @@ export function mapOpenCodeEvent(payload, runId) {
     return event("message.delta", "opencode", runId, { ...base, delta: properties.delta });
   }
   if (type === "permission.asked") {
-    return event("permission.requested", "opencode", runId, { ...base, permission: properties });
+    return event("permission.requested", "opencode", runId, {
+      ...base,
+      permission: { ...properties, id: properties.id ?? properties.requestID ?? properties.permissionID },
+    });
+  }
+  if (type === "permission.replied" || type === "permission.resolved") {
+    return event("permission.resolved", "opencode", runId, {
+      ...base,
+      requestId: properties.id ?? properties.requestID ?? properties.permissionID,
+      reply: properties.reply ?? properties.response,
+    });
   }
   if (type === "question.asked") {
-    return event("question.requested", "opencode", runId, { ...base, question: properties });
+    return event("question.requested", "opencode", runId, {
+      ...base,
+      question: { ...properties, id: properties.id ?? properties.requestID },
+    });
+  }
+  if (type === "question.replied" || type === "question.rejected") {
+    return event("question.resolved", "opencode", runId, {
+      ...base,
+      requestId: properties.id ?? properties.requestID,
+    });
   }
   if (type === "tool.execute.before") {
     return event("tool.started", "opencode", runId, { ...base, ...properties });
@@ -123,7 +142,9 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
     this.directory = config.openCodeDirectory;
     this.providerId = config.openCodeProviderId;
     this.modelId = config.openCodeModelId;
+    this.permissionMode = config.openCodePermissionMode ?? "allow";
     this.sessionDirectories = new Map();
+    this.seenInteractionEvents = new Set();
   }
 
   metadata() {
@@ -156,13 +177,56 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
       response = await fetch(this.url(path, directory), init);
     } catch (error) {
       if (error.name === "AbortError") throw error;
-      throw new GatewayError("ENGINE_UNAVAILABLE", `Cannot reach OpenCode: ${error.message}`, 503);
+      const cause = error.cause?.code ?? error.cause?.message;
+      throw new GatewayError("ENGINE_UNAVAILABLE", `Cannot reach OpenCode: ${error.message}${cause ? ` (${cause})` : ""}`, 503);
     }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 2000);
       throw new GatewayError("ENGINE_ERROR", `OpenCode returned ${response.status}: ${detail}`, 502);
     }
     return response;
+  }
+
+  rememberInteraction(type, requestId) {
+    if (!requestId) return true;
+    const key = `${type}:${requestId}`;
+    if (this.seenInteractionEvents.has(key)) return false;
+    this.seenInteractionEvents.add(key);
+    if (this.seenInteractionEvents.size > 2000) {
+      const oldest = this.seenInteractionEvents.values().next().value;
+      this.seenInteractionEvents.delete(oldest);
+    }
+    return true;
+  }
+
+  async listPermissions(sessionId) {
+    const directory = this.sessionDirectories.get(sessionId) ?? this.directory;
+    const response = await this.checkedFetch("/permission", { headers: this.headers() }, directory);
+    const payload = await response.json();
+    return Array.isArray(payload) ? payload : [];
+  }
+
+  async isPermissionPending(sessionId, requestId) {
+    const permissions = await this.listPermissions(sessionId);
+    return permissions.some((item) => (item.id ?? item.requestID ?? item.permissionID) === requestId);
+  }
+
+  async waitForSessionIdle(sessionId, directory, signal) {
+    let consecutiveFailures = 0;
+    while (!signal?.aborted) {
+      try {
+        const response = await this.checkedFetch("/session/status", { headers: this.headers(), signal }, directory);
+        const statuses = await response.json();
+        if (statuses?.[sessionId]?.type === "idle") return;
+        consecutiveFailures = 0;
+      } catch (error) {
+        if (signal?.aborted || error.name === "AbortError") throw error;
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw signal.reason ?? new DOMException("Aborted", "AbortError");
   }
 
   async healthCheck() {
@@ -214,6 +278,7 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
             try { queue.push({ kind: "event", payload: JSON.parse(item.data) }); }
             catch { /* Ignore keepalive or non-JSON diagnostic frames. */ }
           }
+          if (!eventController.signal.aborted) queue.push({ kind: "streamError", error: new Error("OpenCode event stream closed") });
         } catch (error) {
           if (!eventController.signal.aborted) queue.push({ kind: "streamError", error });
         }
@@ -224,49 +289,74 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
         ? { providerID: this.providerId, modelID: this.modelId }
         : null);
       if (selectedModel) requestBody.model = selectedModel;
-      void this.checkedFetch(`/session/${encodeURIComponent(engineSessionId)}/message`, {
+      void this.checkedFetch(`/session/${encodeURIComponent(engineSessionId)}/prompt_async`, {
         method: "POST",
         headers: this.headers(),
         body: JSON.stringify(requestBody),
         signal,
-      }, directory).then(async (response) => queue.push({ kind: "result", payload: await response.json() }))
+      }, directory).then(() => queue.push({ kind: "accepted" }))
         .catch((error) => queue.push({ kind: "requestError", error }));
 
       let streamedText = "";
-      let result;
-      let flushDeadline = 0;
+      let accepted = false;
+      let completed = false;
+      let sawActivity = false;
+      let sawIdle = false;
       const toolStatuses = new Map();
-      while (true) {
-        const remaining = flushDeadline ? flushDeadline - Date.now() : 0;
-        if (flushDeadline && remaining <= 0) break;
-        const item = flushDeadline
-          ? await Promise.race([
-            queue.next(),
-            new Promise((resolve) => setTimeout(() => resolve({ kind: "flushComplete" }), remaining)),
-          ])
-          : await queue.next();
-        if (item.kind === "flushComplete") break;
+      while (!completed) {
+        const item = await queue.next();
         if (item.kind === "requestError") throw item.error;
         if (item.kind === "streamError") {
-          yield event("run.warning", "opencode", runId, { message: `OpenCode event stream ended early: ${item.error.message}` });
+          yield event("run.warning", "opencode", runId, { message: `OpenCode event stream interrupted; falling back to status polling: ${item.error.message}` });
+          await this.waitForSessionIdle(engineSessionId, directory, signal);
+          completed = true;
           continue;
         }
-        if (item.kind === "result") {
-          result = item.payload;
-          // Let already-in-flight SSE frames arrive before using the final response as a tail fallback.
-          flushDeadline = Date.now() + 50;
+        if (item.kind === "accepted") {
+          accepted = true;
+          if (sawActivity && sawIdle) completed = true;
           continue;
         }
         if (sessionIdOf(item.payload) !== engineSessionId) continue;
+        if (item.payload?.type === "session.status" && item.payload.properties?.status?.type === "busy") sawActivity = true;
+        if (["message.part.delta", "message.part.updated", "permission.asked", "question.asked"].includes(item.payload?.type)) sawActivity = true;
         const toolEvent = mapToolPart(item.payload, runId, toolStatuses);
         const mapped = toolEvent ?? mapOpenCodeEvent(item.payload, runId);
         if (mapped) {
+          if (mapped.type === "permission.requested") {
+            const requestId = mapped.data.permission?.id;
+            if (!this.rememberInteraction("permission", requestId)) continue;
+            if (this.permissionMode !== "ask") {
+              await this.replyPermission(engineSessionId, requestId, {
+                reply: this.permissionMode === "allow" ? "once" : "reject",
+              });
+              continue;
+            }
+          }
+          if (mapped.type === "question.requested" && !this.rememberInteraction("question", mapped.data.question?.id)) continue;
           if (mapped.type === "message.delta") streamedText += mapped.data.delta ?? "";
           yield mapped;
         }
+        if (accepted && item.payload?.type === "session.error") {
+          const message = item.payload.properties?.error?.message ?? item.payload.properties?.error ?? "OpenCode session failed";
+          throw new GatewayError("ENGINE_ERROR", `OpenCode session failed: ${message}`, 502, item.payload.properties);
+        }
+        const isIdle = item.payload?.type === "session.idle"
+          || (item.payload?.type === "session.status" && item.payload.properties?.status?.type === "idle");
+        if (isIdle) {
+          sawIdle = true;
+          if (accepted) completed = true;
+        }
       }
 
-      if (!result) throw new GatewayError("ENGINE_PROTOCOL_ERROR", "OpenCode request completed without a response payload", 502);
+      const messagesResponse = await this.checkedFetch(`/session/${encodeURIComponent(engineSessionId)}/message`, {
+        headers: this.headers(),
+      }, directory);
+      const messages = await messagesResponse.json();
+      const result = Array.isArray(messages)
+        ? [...messages].reverse().find((message) => message?.info?.role === "assistant" || message?.role === "assistant")
+        : null;
+      if (!result) throw new GatewayError("ENGINE_PROTOCOL_ERROR", "OpenCode completed without an assistant message", 502);
       const finalText = messageText(result);
       if (!streamedText && finalText) {
         yield event("message.delta", "opencode", runId, { delta: finalText, fallback: "synchronous-response" });
@@ -297,8 +387,16 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
 
   async replyPermission(sessionId, requestId, { reply, message }) {
     const directory = this.sessionDirectories.get(sessionId) ?? this.directory;
-    await this.checkedFetch(`/permission/${encodeURIComponent(requestId)}/reply`, {
-      method: "POST", headers: this.headers(), body: JSON.stringify({ reply, ...(message ? { message } : {}) }),
-    }, directory);
+    try {
+      await this.checkedFetch(`/permission/${encodeURIComponent(requestId)}/reply`, {
+        method: "POST", headers: this.headers(), body: JSON.stringify({ reply, ...(message ? { message } : {}) }),
+      }, directory);
+      return { ok: true };
+    } catch (error) {
+      if (/permission request not found|notfound|not found/i.test(error.message)) {
+        return { ok: true, alreadyResolved: true };
+      }
+      throw error;
+    }
   }
 }

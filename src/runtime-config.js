@@ -13,10 +13,14 @@ export function localModelDefinition(config) {
 
 export function openCodeInlineConfig(config) {
   const model = localModelDefinition(config);
-  if (!model) return "";
-  return JSON.stringify({
+  const inline = {
     $schema: "https://opencode.ai/config.json",
-    provider: {
+    permission: config.openCodePermissionMode === "allow"
+      ? "allow"
+      : { "*": config.openCodePermissionMode, question: "allow" },
+  };
+  if (model) {
+    inline.provider = {
       [model.providerId]: {
         npm: "@ai-sdk/openai-compatible",
         name: `Local model (${model.baseUrl})`,
@@ -31,9 +35,9 @@ export function openCodeInlineConfig(config) {
           },
         },
       },
-    },
-    permission: { "*": config.openCodePermissionMode, question: "allow" },
-  });
+    };
+  }
+  return JSON.stringify(inline);
 }
 
 export async function prepareLocalModelRuntime(config) {
