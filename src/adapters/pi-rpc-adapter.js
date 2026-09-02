@@ -169,6 +169,7 @@ export class PiRpcAdapter extends EngineAdapter {
       ...(this.config.localModelBaseUrl ? {
         PI_CODING_AGENT_DIR: this.config.piAgentDir,
         LOCAL_MODEL_API_KEY: this.config.localModelApiKey,
+        LOCAL_MODEL_AUTH_VALUE: this.config.localModelAuthValue,
       } : {}),
     };
   }

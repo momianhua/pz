@@ -74,6 +74,7 @@ export class OpenCodeServerManager {
     const env = {
       ...process.env,
       LOCAL_MODEL_API_KEY: this.config.localModelApiKey,
+      LOCAL_MODEL_AUTH_VALUE: this.config.localModelAuthValue,
       OPENCODE_SERVER_PASSWORD: this.config.openCodePassword,
     };
     const inlineConfig = openCodeInlineConfig(this.config);

@@ -14,6 +14,7 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     localModelContextWindow: 32768,
     localModelMaxTokens: 8192,
     openCodePermissionMode: "ask",
+    localModelAuthHeader: "Auth",
     piAgentDir: join(root, "pi-agent"),
   };
   try {
@@ -21,11 +22,14 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     const pi = JSON.parse(await readFile(join(root, "pi-agent", "models.json"), "utf8"));
     assert.equal(pi.providers["local-8017"].baseUrl, "http://127.0.0.1:8017/v1");
     assert.equal(pi.providers["local-8017"].apiKey, "$LOCAL_MODEL_API_KEY");
+    assert.equal(pi.providers["local-8017"].authHeader, false);
+    assert.equal(pi.providers["local-8017"].headers.Auth, "$LOCAL_MODEL_AUTH_VALUE");
     assert.equal(pi.providers["local-8017"].models[0].id, "deepseek");
 
     const openCode = JSON.parse(openCodeInlineConfig(config));
     assert.equal(openCode.provider["local-8017"].options.baseURL, "http://127.0.0.1:8017/v1");
     assert.equal(openCode.provider["local-8017"].options.apiKey, "{env:LOCAL_MODEL_API_KEY}");
+    assert.equal(openCode.provider["local-8017"].options.headers.Auth, "{env:LOCAL_MODEL_AUTH_VALUE}");
     assert.equal(openCode.permission["*"], "ask");
     assert.equal(openCode.permission.question, "allow");
     assert.equal(JSON.parse(openCodeInlineConfig({ ...config, openCodePermissionMode: "allow" })).permission, "allow");

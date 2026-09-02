@@ -144,6 +144,16 @@ OPENCODE_PERMISSION_MODE=allow
 
 执行 `npm start` 后，网关会在被 `.gitignore` 排除的 `data/runtime/` 下自动生成 Pi 配置，并通过 `OPENCODE_CONFIG_CONTENT` 给自动启动的 OpenCode Server 注入同一 Provider。无需创建或编辑用户目录下的 `.pi`、`.config/opencode`。`PI_PROVIDER/PI_MODEL` 与 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 留空时自动继承统一配置。
 
+标准鉴权默认发送 `Authorization: Bearer <LOCAL_MODEL_API_KEY>`。如果模型服务要求自定义请求头，例如 `Auth: token`，只需追加：
+
+```dotenv
+LOCAL_MODEL_AUTH_HEADER=Auth
+# 留空时复用 LOCAL_MODEL_API_KEY；需要前缀时可填写完整值，例如 Bearer token
+LOCAL_MODEL_AUTH_VALUE=
+```
+
+该 Header 会同时注入 Pi 和 OpenCode 的模型请求，不需要手工修改任何引擎配置文件。自定义 Header 启用后，Pi 不再额外生成标准 Authorization Header。
+
 普通无人值守对话使用 `OPENCODE_PERMISSION_MODE=allow`；网关既会把该策略注入自己启动的 OpenCode Server，也会在连接外部 OpenCode 时自动处理意外到达的权限事件，因此这些请求不会进入网关 `/permission` 队列。验证权限流程时改为 `ask`，可通过 `/permission/{id}/reply` 回复。回复接口是幂等的，OpenCode 已处理的请求会从网关队列自动清除。
 
 建议保持 `OPENCODE_AUTOSTART=true`，让网关在 OpenCode 评测轮次管理 Server 并确保配置一致。如果 4096 端口已有手工启动的旧 OpenCode，它不会重新读取网关 `.env`；应先停止旧进程再启动网关，或者设置 `OPENCODE_AUTOSTART=false` 明确使用外部 Server。

@@ -36,6 +36,11 @@ export function loadConfig(overrides = {}) {
   const localModelBaseUrl = process.env.LOCAL_MODEL_BASE_URL ?? "";
   const localModelProviderId = process.env.LOCAL_MODEL_PROVIDER_ID ?? "local-openai";
   const localModelId = process.env.LOCAL_MODEL_ID ?? "deepseek";
+  const localModelApiKey = process.env.LOCAL_MODEL_API_KEY || "local";
+  const localModelAuthHeader = (process.env.LOCAL_MODEL_AUTH_HEADER ?? "").trim();
+  if (localModelAuthHeader && !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(localModelAuthHeader)) {
+    throw new Error("LOCAL_MODEL_AUTH_HEADER must be a valid HTTP header name");
+  }
   const port = Number.parseInt(cli.port ?? process.env.PORT ?? "6217", 10);
   if (!Number.isFinite(port) || port <= 0) throw new Error("port must be a positive integer");
   return {
@@ -64,7 +69,9 @@ export function loadConfig(overrides = {}) {
     localModelBaseUrl,
     localModelProviderId,
     localModelId,
-    localModelApiKey: process.env.LOCAL_MODEL_API_KEY || "local",
+    localModelApiKey,
+    localModelAuthHeader,
+    localModelAuthValue: process.env.LOCAL_MODEL_AUTH_VALUE || localModelApiKey,
     localModelContextWindow: integer("LOCAL_MODEL_CONTEXT_WINDOW", 32768),
     localModelMaxTokens: integer("LOCAL_MODEL_MAX_TOKENS", 8192),
     ...overrides,

@@ -62,6 +62,8 @@ npm start
 
 OpenCode 轮次建议配置 `OPENCODE_AUTOSTART=true`，并确保 4096 端口没有旧的手工 OpenCode 进程。`OPENCODE_PERMISSION_MODE=allow` 会自动处理权限请求且不加入 `/permission` 队列；需要评测权限交互时使用 `ask`。长任务默认允许执行 10 分钟，可通过 `RUN_TIMEOUT_MS` 调整。
 
+模型服务使用标准 Bearer 鉴权时填写 `LOCAL_MODEL_API_KEY` 即可。若要求自定义 Header（例如 `Auth`），设置 `LOCAL_MODEL_AUTH_HEADER=Auth`；Header 值默认复用 `LOCAL_MODEL_API_KEY`，也可通过 `LOCAL_MODEL_AUTH_VALUE` 填写包含前缀的完整值。
+
 ## 4. 官方接口执行顺序
 
 1. `POST /session?directory=<工作目录>`，请求体 `{"title":"评测会话"}`。

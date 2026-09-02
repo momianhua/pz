@@ -8,6 +8,7 @@ export function localModelDefinition(config) {
     baseUrl: config.localModelBaseUrl.replace(/\/$/, ""),
     contextWindow: config.localModelContextWindow,
     maxTokens: config.localModelMaxTokens,
+    authHeader: config.localModelAuthHeader,
   };
 }
 
@@ -27,6 +28,7 @@ export function openCodeInlineConfig(config) {
         options: {
           baseURL: model.baseUrl,
           apiKey: "{env:LOCAL_MODEL_API_KEY}",
+          ...(model.authHeader ? { headers: { [model.authHeader]: "{env:LOCAL_MODEL_AUTH_VALUE}" } } : {}),
         },
         models: {
           [model.modelId]: {
@@ -50,7 +52,8 @@ export async function prepareLocalModelRuntime(config) {
         baseUrl: model.baseUrl,
         api: "openai-completions",
         apiKey: "$LOCAL_MODEL_API_KEY",
-        authHeader: true,
+        authHeader: !model.authHeader,
+        ...(model.authHeader ? { headers: { [model.authHeader]: "$LOCAL_MODEL_AUTH_VALUE" } } : {}),
         compat: {
           supportsDeveloperRole: false,
           supportsReasoningEffort: false,
