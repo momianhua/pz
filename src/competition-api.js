@@ -47,6 +47,11 @@ export class CompetitionApi {
     };
   }
 
+  publicInteraction(request) {
+    const { _tenantId, _conversationId, ...payload } = request;
+    return payload;
+  }
+
   async handle(req, res, url, { readBody, sendJson }) {
     if (!this.isRoute(url.pathname)) return false;
     try {
@@ -130,7 +135,7 @@ export class CompetitionApi {
       }
 
       if (req.method === "GET" && url.pathname === "/question") {
-        sendJson(res, 200, [...this.questions.values()]);
+        sendJson(res, 200, [...this.questions.values()].map((request) => this.publicInteraction(request)));
         return true;
       }
       const questionReply = url.pathname.match(/^\/question\/([^/]+)\/reply$/);
@@ -142,14 +147,14 @@ export class CompetitionApi {
         if (!Array.isArray(payload.answers) || payload.answers.some((answer) => !Array.isArray(answer))) {
           throw new GatewayError("VALIDATION_ERROR", "answers must be an array of arrays", 400);
         }
-        await this.gateway.replyQuestion(TENANT_ID, pending.sessionID, requestId, payload.answers);
+        await this.gateway.replyQuestion(pending._tenantId, pending._conversationId, requestId, payload.answers);
         this.questions.delete(requestId);
         sendJson(res, 200, { ok: true });
         return true;
       }
 
       if (req.method === "GET" && url.pathname === "/permission") {
-        sendJson(res, 200, [...this.permissions.values()]);
+        sendJson(res, 200, [...this.permissions.values()].map((request) => this.publicInteraction(request)));
         return true;
       }
       const permissionReply = url.pathname.match(/^\/permission\/([^/]+)\/reply$/);
@@ -161,7 +166,7 @@ export class CompetitionApi {
         if (!["once", "always", "reject"].includes(payload.reply)) {
           throw new GatewayError("VALIDATION_ERROR", "reply must be once, always, or reject", 400);
         }
-        await this.gateway.replyPermission(TENANT_ID, pending.sessionID, requestId, payload.reply, payload.message);
+        await this.gateway.replyPermission(pending._tenantId, pending._conversationId, requestId, payload.reply, payload.message);
         this.permissions.delete(requestId);
         sendJson(res, 200, { ok: true });
         return true;
@@ -268,7 +273,7 @@ export class CompetitionApi {
     if (item.type === "question.requested") {
       const source = item.data.question ?? {};
       const id = source.id ?? `req_${randomUUID()}`;
-      const request = { id, sessionID: session.id, questions: source.questions ?? [], created_at: new Date().toISOString() };
+      const request = { id, sessionID: session.id, questions: source.questions ?? [], created_at: new Date().toISOString(), _tenantId: TENANT_ID, _conversationId: session.id };
       this.questions.set(id, request);
       this.emit("question.asked", { sessionID: session.id, id, questions: request.questions });
       return;
@@ -278,10 +283,34 @@ export class CompetitionApi {
       const id = source.id ?? `perm_${randomUUID()}`;
       const request = {
         id, sessionID: session.id, permission: source.permission ?? source.type ?? "unknown",
-        patterns: source.patterns ?? [], created_at: new Date().toISOString(),
+        patterns: source.patterns ?? [], created_at: new Date().toISOString(), _tenantId: TENANT_ID, _conversationId: session.id,
       };
       this.permissions.set(id, request);
       this.emit("permission.asked", { sessionID: session.id, id, permission: request.permission, patterns: request.patterns });
+    }
+  }
+
+  consumeExternalEvent({ tenantId, conversationId }, item) {
+    if (item.type === "question.requested") {
+      const source = item.data.question ?? {};
+      const id = source.id ?? `req_${randomUUID()}`;
+      const request = {
+        id, sessionID: conversationId, questions: source.questions ?? [], created_at: new Date().toISOString(),
+        _tenantId: tenantId, _conversationId: conversationId,
+      };
+      this.questions.set(id, request);
+      this.emit("question.asked", { sessionID: conversationId, id, questions: request.questions });
+    }
+    if (item.type === "permission.requested") {
+      const source = item.data.permission ?? {};
+      const id = source.id ?? `perm_${randomUUID()}`;
+      const request = {
+        id, sessionID: conversationId, permission: source.permission ?? source.type ?? "unknown",
+        patterns: source.patterns ?? [], created_at: new Date().toISOString(),
+        _tenantId: tenantId, _conversationId: conversationId,
+      };
+      this.permissions.set(id, request);
+      this.emit("permission.asked", { sessionID: conversationId, id, permission: request.permission, patterns: request.patterns });
     }
   }
 }

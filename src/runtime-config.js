@@ -32,12 +32,7 @@ export function openCodeInlineConfig(config) {
         },
       },
     },
-    permission: {
-      question: "allow",
-      bash: config.openCodePermissionMode,
-      edit: config.openCodePermissionMode,
-      external_directory: config.openCodePermissionMode,
-    },
+    permission: { "*": config.openCodePermissionMode, question: "allow" },
   });
 }
 

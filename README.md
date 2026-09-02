@@ -143,7 +143,7 @@ OPENCODE_PERMISSION_MODE=allow
 
 执行 `npm start` 后，网关会在被 `.gitignore` 排除的 `data/runtime/` 下自动生成 Pi 配置，并通过 `OPENCODE_CONFIG_CONTENT` 给自动启动的 OpenCode Server 注入同一 Provider。无需创建或编辑用户目录下的 `.pi`、`.config/opencode`。`PI_PROVIDER/PI_MODEL` 与 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 留空时自动继承统一配置。
 
-普通无人值守对话使用 `OPENCODE_PERMISSION_MODE=allow`，避免工具等待授权导致网关超时；仅在验证 `permission.asked` 流程时改为 `ask`，并通过官方 `/permission/{id}/reply` 接口回复。
+普通无人值守对话使用 `OPENCODE_PERMISSION_MODE=allow`，避免工具等待授权导致网关超时；验证权限流程时改为 `ask`，此时包括 `read` 在内的所有工具都会请求授权，可通过 `/permission/{id}/reply` 回复。官方 `prompt_async` 和额外的 `/api/chat` 产生的交互都会登记到 `/permission`、`/question` 队列。
 
 ### Pi Agent
 

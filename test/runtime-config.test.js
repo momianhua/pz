@@ -13,6 +13,7 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     localModelId: "deepseek",
     localModelContextWindow: 32768,
     localModelMaxTokens: 8192,
+    openCodePermissionMode: "ask",
     piAgentDir: join(root, "pi-agent"),
   };
   try {
@@ -25,7 +26,8 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     const openCode = JSON.parse(openCodeInlineConfig(config));
     assert.equal(openCode.provider["local-8017"].options.baseURL, "http://127.0.0.1:8017/v1");
     assert.equal(openCode.provider["local-8017"].options.apiKey, "{env:LOCAL_MODEL_API_KEY}");
-    assert.equal(openCode.permission.bash, "ask");
+    assert.equal(openCode.permission["*"], "ask");
+    assert.equal(openCode.permission.question, "allow");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

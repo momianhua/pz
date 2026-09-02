@@ -114,7 +114,13 @@ export function createHttpServer({ gateway, config }) {
         const context = requestContext(req, payload);
         const abortController = new AbortController();
         res.on("close", () => { if (!res.writableFinished) abortController.abort(); });
-        const stream = gateway.chat({ ...context, input: String(payload.input ?? ""), signal: abortController.signal });
+        const engineStream = gateway.chat({ ...context, input: String(payload.input ?? ""), signal: abortController.signal });
+        const stream = (async function* observeInteractions() {
+          for await (const item of engineStream) {
+            competition.consumeExternalEvent(context, item);
+            yield item;
+          }
+        })();
         if (url.pathname.endsWith("/stream")) {
           res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
           try {
@@ -136,7 +142,14 @@ export function createHttpServer({ gateway, config }) {
         const context = requestContext(req, { ...payload, engine: payload.engine ?? payload.metadata?.engine });
         const lastUser = [...(payload.messages ?? [])].reverse().find((message) => message.role === "user");
         const input = typeof lastUser?.content === "string" ? lastUser.content : "";
-        const result = await collectEvents(gateway.chat({ ...context, input }));
+        const engineStream = gateway.chat({ ...context, input });
+        const observedStream = (async function* observeInteractions() {
+          for await (const item of engineStream) {
+            competition.consumeExternalEvent(context, item);
+            yield item;
+          }
+        })();
+        const result = await collectEvents(observedStream);
         const session = gateway.getSession(context.tenantId, context.conversationId);
         return json(res, 200, {
           id: `chatcmpl-${Date.now()}`,
