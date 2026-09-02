@@ -48,7 +48,7 @@ test("official gateway lifecycle and completion contract", async () => {
     assert.equal(created.body.status, "idle");
     assert.match(created.body.id, /^ses_/);
 
-    const prompt = await jsonRequest(`${f.baseUrl}/session/${created.body.id}/prompt_async`, {
+    const promptRequest = jsonRequest(`${f.baseUrl}/session/${created.body.id}/prompt_async`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         parts: [{ type: "text", text: "你好" }],
@@ -56,6 +56,10 @@ test("official gateway lifecycle and completion contract", async () => {
         agent: "assistant",
       }),
     });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const busyStatuses = await jsonRequest(`${f.baseUrl}/session/status`);
+    assert.deepEqual(busyStatuses.body[created.body.id], { type: "busy" });
+    const prompt = await promptRequest;
     assert.equal(prompt.response.status, 204);
 
     const messages = await jsonRequest(`${f.baseUrl}/session/${created.body.id}/message`);

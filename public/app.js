@@ -5,6 +5,7 @@ const state = {
   sending: false,
   eventSource: null,
   streamMessages: new Map(),
+  statusPoll: null,
 };
 
 function apiError(payload, fallback) {
@@ -36,6 +37,29 @@ function setStatus(status) {
   element.textContent = status ?? "—";
   element.className = `status-badge ${status ?? ""}`;
   $("#abort").classList.toggle("hidden", status !== "busy");
+}
+
+async function refreshOfficialStatus() {
+  if (!state.sessionId) return;
+  const statuses = await request("/session/status");
+  const status = statuses?.[state.sessionId]?.type;
+  if (status) setStatus(status);
+}
+
+function startStatusPolling() {
+  clearInterval(state.statusPoll);
+  let polling = false;
+  state.statusPoll = setInterval(async () => {
+    if (polling || !state.sending) return;
+    polling = true;
+    try { await refreshOfficialStatus(); } catch { /* SSE and final session reload remain as fallbacks. */ }
+    finally { polling = false; }
+  }, 750);
+}
+
+function stopStatusPolling() {
+  clearInterval(state.statusPoll);
+  state.statusPoll = null;
 }
 
 function setSessionId(id) {
@@ -243,6 +267,8 @@ async function sendMessage(text) {
   if (!providerID || !modelID) return notice("providerID 和 modelID 不能为空");
   state.sending = true;
   $("#send").disabled = true;
+  setStatus("busy");
+  startStatusPolling();
   makeMessage("user", text, "USER · POST /prompt_async");
   try {
     await request(`/session/${encodeURIComponent(state.sessionId)}/prompt_async`, {
@@ -255,6 +281,7 @@ async function sendMessage(text) {
     notice(error.message, "error", 0);
     await loadSession({ quiet: true });
   } finally {
+    stopStatusPolling();
     state.sending = false;
     $("#send").disabled = false;
     $("#prompt").focus();
