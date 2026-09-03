@@ -14,6 +14,8 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     localModelContextWindow: 32768,
     localModelMaxTokens: 8192,
     openCodePermissionMode: "ask",
+    agentSkillsDir: join(root, "source-skills"),
+    openCodeConfigDir: join(root, "opencode"),
     localModelAuthHeader: "Auth",
     piAgentDir: join(root, "pi-agent"),
     piShellPath: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
@@ -35,6 +37,8 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     assert.equal(openCode.provider["local-8017"].options.headers.Auth, "{env:LOCAL_MODEL_AUTH_VALUE}");
     assert.equal(openCode.permission["*"], "ask");
     assert.equal(openCode.permission.question, "allow");
+    assert.equal(openCode.permission.skill, "allow");
+    assert.deepEqual(openCode.skills, [join(root, "opencode", "skills").replace(/\\/g, "/")]);
     assert.equal(JSON.parse(openCodeInlineConfig({ ...config, openCodePermissionMode: "allow" })).permission, "allow");
     assert.equal(JSON.parse(openCodeInlineConfig({ ...config, localModelBaseUrl: "" })).permission["*"], "ask");
   } finally {

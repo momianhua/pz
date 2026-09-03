@@ -160,6 +160,47 @@ LOCAL_MODEL_AUTH_VALUE=
 
 OpenCode 适配器使用上游 `/prompt_async` 加 SSE/状态轮询完成长任务，不再让 `/session/{id}/message` HTTP 请求一直挂起。网关默认任务超时为 10 分钟（`RUN_TIMEOUT_MS=600000`）；更长任务可以继续调大。
 
+### 启动时加载共享 Skills
+
+在 `.env` 指向一个共享 Skill 目录，网关启动时会将其同步到项目隔离的 Pi 和 OpenCode 运行目录，不会改动用户主目录：
+
+```dotenv
+AGENT_SKILLS_DIR=C:/agent-assets/skills
+PI_AGENT_DIR=./data/runtime/pi-agent
+OPENCODE_CONFIG_DIR=./data/runtime/opencode
+OPENCODE_AUTOSTART=true
+```
+
+推荐一个目录放多个 Skill：
+
+```text
+C:/agent-assets/skills/
+├── file-reader/
+│   ├── SKILL.md
+│   └── references/
+│       ├── rules.md
+│       └── examples.md
+└── web-search/
+    ├── SKILL.md
+    └── references/
+        └── policy.md
+```
+
+也支持 `AGENT_SKILLS_DIR` 直接指向单个 Skill 目录。如果入口文件不是 `SKILL.md`，该目录中必须只有一个非 `README.md` 的顶层 `.md` 文件；同步时会自动规范化为 `SKILL.md`。每个入口必须包含：
+
+```markdown
+---
+name: file-reader
+description: Read local files according to the supplied rules
+---
+```
+
+`name` 必须是小写字母、数字和单连字符组成，并且全局唯一。整个 Skill 目录会递归复制，所以 `references/`、`scripts/` 和其他相对路径资源都会保留。启动成功时控制台会输出 `Loaded skills (N): ...`；配置或 frontmatter 无效时会直接阻止启动并给出具体文件。
+
+同步目标是 `data/runtime/pi-agent/skills/` 与 `data/runtime/opencode/skills/`。这里的“加载”指启动时完成发现和注册；引擎只向模型展示 Skill 的名称与描述，模型在任务匹配时再读取正文及引用文件，避免每轮都把所有 Skill 塞入上下文。由 `AGENT_SKILLS_DIR` 明确信任的 Skill 在 OpenCode `ask`/`deny` 工具策略下仍允许加载，但 Skill 随后触发的文件、终端等工具仍遵守原权限策略。
+
+OpenCode Skill 配置通过网关启动子进程时的环境变量注入，因此应使用 `OPENCODE_AUTOSTART=true`。如果连接的是已经在外部启动的 OpenCode Server，该进程不会读取网关 `.env`，需要先停止它并由网关重新启动；或者在外部 Server 启动环境中自行设置同一个 `OPENCODE_CONFIG_DIR`。
+
 ### Pi Agent
 
 根据 [Pi 官方文档](https://pi.dev/docs/latest)，安装命令为：

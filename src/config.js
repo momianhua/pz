@@ -57,6 +57,7 @@ export function loadConfig(overrides = {}) {
     piModel: process.env.PI_MODEL || (localModelBaseUrl ? localModelId : ""),
     piSessionRoot: resolve(process.env.PI_SESSION_ROOT ?? "./data/pi-sessions"),
     piAgentDir: resolve(process.env.PI_AGENT_DIR ?? "./data/runtime/pi-agent"),
+    agentSkillsDir: process.env.AGENT_SKILLS_DIR ? resolve(process.env.AGENT_SKILLS_DIR) : "",
     piShellPath: process.env.PI_SHELL_PATH ?? (process.platform === "win32"
       ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
       : ""),
@@ -64,6 +65,7 @@ export function loadConfig(overrides = {}) {
     openCodeUsername: process.env.OPENCODE_SERVER_USERNAME ?? "opencode",
     openCodePassword: process.env.OPENCODE_SERVER_PASSWORD ?? "",
     openCodeDirectory: resolve(process.env.OPENCODE_DIRECTORY ?? process.cwd()),
+    openCodeConfigDir: resolve(process.env.OPENCODE_CONFIG_DIR ?? "./data/runtime/opencode"),
     openCodeProviderId: process.env.OPENCODE_PROVIDER_ID || (localModelBaseUrl ? localModelProviderId : ""),
     openCodeModelId: process.env.OPENCODE_MODEL_ID || (localModelBaseUrl ? localModelId : ""),
     openCodeCommand: process.env.OPENCODE_COMMAND ?? "opencode",

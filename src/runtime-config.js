@@ -18,8 +18,11 @@ export function openCodeInlineConfig(config) {
     $schema: "https://opencode.ai/config.json",
     permission: config.openCodePermissionMode === "allow"
       ? "allow"
-      : { "*": config.openCodePermissionMode, question: "allow" },
+      : { "*": config.openCodePermissionMode, question: "allow", skill: "allow" },
   };
+  if (config.agentSkillsDir && config.openCodeConfigDir) {
+    inline.skills = [config.openCodeConfigDir.replace(/\\/g, "/") + "/skills"];
+  }
   if (model) {
     inline.provider = {
       [model.providerId]: {

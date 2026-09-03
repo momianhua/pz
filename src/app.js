@@ -7,10 +7,12 @@ import { JsonSessionStore } from "./core/json-store.js";
 import { createHttpServer } from "./http-server.js";
 import { prepareLocalModelRuntime } from "./runtime-config.js";
 import { OpenCodeServerManager } from "./opencode-server-manager.js";
+import { prepareSkillRuntime } from "./skill-runtime.js";
 
 export async function createApp(overrides = {}) {
   const config = loadConfig(overrides);
   await prepareLocalModelRuntime(config);
+  const skillRuntime = await prepareSkillRuntime(config);
   const openCodeServer = new OpenCodeServerManager(config);
   await openCodeServer.start();
   const adapters = overrides.adapters ?? (config.engineMode === "mock"
@@ -19,5 +21,5 @@ export async function createApp(overrides = {}) {
   const store = overrides.store ?? await new JsonSessionStore(config.stateFile).load();
   const gateway = new AgentGateway({ adapters, store, defaultEngine: config.defaultEngine, runTimeoutMs: config.runTimeoutMs });
   const server = createHttpServer({ gateway, config });
-  return { config, adapters, store, gateway, server, openCodeServer };
+  return { config, adapters, store, gateway, server, openCodeServer, skillRuntime };
 }
