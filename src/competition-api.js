@@ -10,6 +10,12 @@ function requiredText(value, name) {
   return value.trim();
 }
 
+function optionalText(value, name) {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value !== "string") throw new GatewayError("VALIDATION_ERROR", `${name} must be a string`, 400);
+  return value.trim();
+}
+
 export class CompetitionApi {
   constructor({ gateway, config }) {
     this.gateway = gateway;
@@ -76,9 +82,11 @@ export class CompetitionApi {
 
       if (req.method === "POST" && url.pathname === "/session") {
         const payload = await readBody(req);
-        const title = requiredText(payload.title, "title");
         const id = `ses_${randomUUID().replaceAll("-", "")}`;
-        const directory = url.searchParams.get("directory") ?? "";
+        const title = optionalText(payload.title, "title") || `评测会话-${id.slice(-8)}`;
+        const directory = optionalText(payload.directory, "directory")
+          || optionalText(url.searchParams.get("directory"), "directory")
+          || this.config.openCodeDirectory;
         const session = { id, title, directory, created_at: new Date().toISOString(), status: "idle", messages: [] };
         this.sessions.set(id, session);
         await this.gateway.ensureSession(TENANT_ID, id, { title, directory });

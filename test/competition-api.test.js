@@ -41,18 +41,19 @@ test("official gateway lifecycle and completion contract", async () => {
     assert.match(firstFrame, /server\.connected/);
     await eventReader.cancel();
 
-    const created = await jsonRequest(`${f.baseUrl}/session?directory=${encodeURIComponent(f.directory)}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "评测会话" }),
+    const created = await jsonRequest(`${f.baseUrl}/session`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "评测会话", directory: f.directory }),
     });
     assert.equal(created.response.status, 200);
     assert.equal(created.body.status, "idle");
     assert.match(created.body.id, /^ses_/);
+    assert.equal(f.app.gateway.getSession("contest-evaluator", created.body.id).directory, f.directory);
 
     const promptRequest = jsonRequest(`${f.baseUrl}/session/${created.body.id}/prompt_async`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         parts: [{ type: "text", text: "你好" }],
-        model: { providerID: "glm-provider", modelID: "glm-5.2" },
+        model: { providerID: "internal-provider", modelID: "evaluation-model" },
         agent: "assistant",
       }),
     });
@@ -86,14 +87,31 @@ test("official gateway lifecycle and completion contract", async () => {
 test("official gateway errors use top-level code and message", async () => {
   const f = await fixture();
   try {
+    const generated = await jsonRequest(`${f.baseUrl}/session`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory: f.directory }),
+    });
+    assert.equal(generated.response.status, 200);
+    assert.match(generated.body.title, /^评测会话-/);
+    assert.equal(f.app.gateway.getSession("contest-evaluator", generated.body.id).directory, f.directory);
     const invalid = await jsonRequest(`${f.baseUrl}/session`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory: 42 }),
     });
     assert.equal(invalid.response.status, 400);
-    assert.deepEqual(invalid.body, { code: "VALIDATION_ERROR", message: "title is required" });
+    assert.deepEqual(invalid.body, { code: "VALIDATION_ERROR", message: "directory must be a string" });
     const missing = await jsonRequest(`${f.baseUrl}/session/not-found`);
     assert.equal(missing.response.status, 404);
     assert.equal(missing.body.code, "NOT_FOUND");
+  } finally { await f.close(); }
+});
+
+test("legacy session directory query parameter remains compatible", async () => {
+  const f = await fixture();
+  try {
+    const created = await jsonRequest(`${f.baseUrl}/session?directory=${encodeURIComponent(f.directory)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "旧版调用" }),
+    });
+    assert.equal(created.response.status, 200);
+    assert.equal(f.app.gateway.getSession("contest-evaluator", created.body.id).directory, f.directory);
   } finally { await f.close(); }
 });
 

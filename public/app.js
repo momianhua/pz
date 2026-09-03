@@ -126,13 +126,11 @@ async function loadRuntime() {
 async function createSession() {
   if (state.sending) return;
   const title = $("#session-title").value.trim();
-  if (!title) return notice("请填写会话标题");
   const directory = $("#directory").value.trim();
-  const path = `/session${directory ? `?directory=${encodeURIComponent(directory)}` : ""}`;
-  const session = await request(path, {
+  const session = await request("/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ ...(title ? { title } : {}), ...(directory ? { directory } : {}) }),
   });
   setSessionId(session.id);
   setStatus(session.status);

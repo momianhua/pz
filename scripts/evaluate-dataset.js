@@ -188,8 +188,8 @@ async function runEngine(engine, options) {
       const result = { taskDirectory, taskId: task.task_id, title: task.title, engine, query, startedAt: new Date(started).toISOString() };
       process.stdout.write(`[${engine}] ${taskDirectory} ${task.title} ... `);
       try {
-        const created = await requestJson(`${baseUrl}/session?directory=${encodeURIComponent(plan.directory)}`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: `${engine}-${task.task_id}` }),
+        const created = await requestJson(`${baseUrl}/session`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: `${engine}-${task.task_id}`, directory: plan.directory }),
         });
         if (!created.response.ok) throw new Error(`create session ${created.response.status}: ${JSON.stringify(created.body)}`);
         result.sessionId = created.body.id;

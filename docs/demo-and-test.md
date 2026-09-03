@@ -1,6 +1,6 @@
 # 测试报告与录屏脚本
 
-验证环境：Windows、Node.js 22、OpenCode `1.18.25`、Pi `0.84.4`。真实健康检查、OpenCode session 与 Pi RPC 均已通过。调试模型可自由配置，比赛时可切换到推荐的 GLM5.2；测试报告和提交包不记录任何 provider 凭据。
+验证环境：Windows、Node.js 22、OpenCode `1.18.25`、Pi `0.84.4`。真实健康检查、OpenCode session 与 Pi RPC 均已通过。正式评测使用赛事提供或允许的内部部署模型；测试报告和提交包不记录任何 provider 凭据。
 
 ## 自动测试
 

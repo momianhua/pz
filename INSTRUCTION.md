@@ -33,7 +33,7 @@ OPENCODE_PERMISSION_MODE=allow
 RUN_TIMEOUT_MS=600000
 ```
 
-正式评测时将 `LOCAL_MODEL_ID` 配置为赛题指定的 GLM5.2 实际模型 ID。`PI_PROVIDER/PI_MODEL` 和 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 留空即可继承统一模型配置。
+正式评测使用赛事提供或允许的内部部署模型，并将其实际 ID 配置到 `LOCAL_MODEL_ID`。`PI_PROVIDER/PI_MODEL` 和 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 留空即可继承统一模型配置。
 
 如模型使用自定义鉴权头，再配置：
 
@@ -90,7 +90,7 @@ Invoke-RestMethod http://localhost:6217/api/engines
 
 ## 4. 评测接口调用顺序
 
-1. 创建会话：`POST /session?directory=<受控工作目录>`。
+1. 创建会话：`POST /session`，在 JSON Body 中传入评测工作目录 `directory`；`title` 可选。
 2. 后台连接 `GET /event`，记录完整 SSE Rollout。
 3. 发送任务：`POST /session/{id}/prompt_async`。
 4. 等待接口返回 HTTP 204，并等待会话变为 `idle`。
@@ -100,8 +100,8 @@ PowerShell 最小示例：
 
 ```powershell
 $base = "http://localhost:6217"
-$workdir = [uri]::EscapeDataString((Get-Location).Path)
-$session = Invoke-RestMethod -Method Post -Uri "$base/session?directory=$workdir" -ContentType "application/json" -Body '{"title":"评测会话"}'
+$create = @{ title = "评测会话"; directory = (Get-Location).Path } | ConvertTo-Json
+$session = Invoke-RestMethod -Method Post -Uri "$base/session" -ContentType "application/json" -Body $create
 
 $request = @{
   parts = @(@{ type = "text"; text = "请完成评测任务" })
