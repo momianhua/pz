@@ -4,9 +4,36 @@
 
 项目内置“评测接口对话控制台”。页面不再维护独立的演示消息，而是直接调用赛题规定的 `/session`、`/prompt_async`、`/message`、`/event`、`/question` 和 `/permission`：页面看到的 Session ID 和消息可被评测接口原样查询。
 
-## 30 秒启动
+## 全新 Windows 沙箱启动
 
-要求 Node.js 22 或更高版本，无需安装 npm 依赖。
+Windows 10/11 的全新沙箱只需要能够联网并带有系统自带的 Windows PowerShell，不要求预装 Node.js、Python、Pi 或 OpenCode，也不需要管理员权限：
+
+```powershell
+.\setup.cmd
+Copy-Item .env.example .env
+.\start.cmd
+```
+
+`setup.cmd` 将 Node.js `22.23.2`、Python `3.12.10`、Pi `0.84.4`、OpenCode `1.18.25` 和 Office 测试依赖安装到项目的 `.runtime/`。下载文件使用固定 SHA-256 校验；`.runtime/` 不提交 Git，也不修改系统 PATH。`start.cmd` 只在当前进程树中把这些私有工具设为默认值，因此 Pi、OpenCode 及其终端工具看到的是同一套 Node/Python 环境。
+
+私有环境完整自检：
+
+```powershell
+.\test.cmd
+```
+
+真实测试集运行：
+
+```powershell
+.\test-data.cmd --engine pi
+.\test-data.cmd --engine opencode
+```
+
+首次安装需要联网；后续启动无需重新下载。重复执行 `setup.cmd` 会复用校验通过的下载和已安装组件。
+
+## 已有运行时快速启动
+
+如果机器已经安装 Node.js `22.19.0` 或更高版本，可以继续使用：
 
 ```bash
 npm start
@@ -20,7 +47,7 @@ npm start
 docker compose up --build
 ```
 
-本交付件已在 Windows 上验证 OpenCode `1.18.25` 与 Pi `0.84.4`。模型通过请求和环境变量配置，可在调试时使用任意模型、比赛时切换到推荐的 GLM5.2。比赛环境建议固定这两个已验证引擎版本，升级后重新执行协议测试。
+本交付件已在 Windows 上验证项目私有 Node `22.23.2`、Python `3.12.10`、OpenCode `1.18.25` 与 Pi `0.84.4`。模型通过请求和环境变量配置，可在调试时使用任意模型、比赛时切换到推荐的 GLM5.2。比赛环境建议固定这些已验证版本，升级后重新执行协议测试。
 
 ## 演示路径
 

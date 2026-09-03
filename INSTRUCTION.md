@@ -1,40 +1,42 @@
 # 裁判执行说明书
 
-## 1. 环境准备
+## 1. 全新沙箱环境准备
 
 - 操作系统：Windows 10/11
-- Node.js：22 或更高版本
-- Agent 引擎：OpenCode `1.18.25`、Pi Agent `0.84.4`
+- 初始依赖：可访问互联网、Windows PowerShell（系统自带）
 - 模型：任意已接入模型均可用于调试，GLM5.2 为比赛推荐模型
 
-安装两个引擎（网关本身没有第三方 npm 依赖）：
+项目提供私有环境安装器，不需要预装 Node/Python、不需要管理员权限，也不修改系统 PATH：
 
 ```powershell
-npm install -g opencode-ai@1.18.25 @earendil-works/pi-coding-agent@0.84.4
+.\setup.cmd
 Copy-Item .env.example .env
 ```
 
+安装结果位于被 Git 忽略的 `.runtime/`：Node `22.23.2`、Python `3.12.10`、OpenCode `1.18.25`、Pi Agent `0.84.4`，以及 `requirements-test.txt` 中的 Office/检索依赖。官方安装包均校验固定 SHA-256，Python 在 PowerShell 支持时额外校验 Authenticode 签名。重复执行 `setup.cmd` 可安全复用缓存。
+
 编辑 `.env`，把 `PI_PROVIDER`、`PI_MODEL`、`OPENCODE_PROVIDER_ID`、`OPENCODE_MODEL_ID` 配置为实际可用的 Provider/Model ID，并按模型服务说明配置对应 API Key。调试阶段可使用任意模型，正式比赛可切换到推荐的 GLM5.2。禁止把真实密钥写入提交包。
 
-若使用 OpenAI 兼容的本地模型，无需编辑用户目录配置，只设置 `LOCAL_MODEL_BASE_URL`、`LOCAL_MODEL_PROVIDER_ID`、`LOCAL_MODEL_ID`、`LOCAL_MODEL_API_KEY`。设置 `OPENCODE_AUTOSTART=true` 后，`npm start` 会同时准备 Pi 配置并自动启动 OpenCode Server。
+若使用 OpenAI 兼容的本地模型，无需编辑用户目录配置，只设置 `LOCAL_MODEL_BASE_URL`、`LOCAL_MODEL_PROVIDER_ID`、`LOCAL_MODEL_ID`、`LOCAL_MODEL_API_KEY`。设置 `OPENCODE_AUTOSTART=true` 后，`start.cmd` 会同时准备 Pi 配置并自动启动 OpenCode Server。
 
 普通自动化评测建议设置 `OPENCODE_PERMISSION_MODE=allow`。测试权限反问时改为 `ask`，并确保评测客户端在阻塞的 `prompt_async` 之外并发监听和回复 `/permission`。
 
-OpenCode 模式需先启动其本地 Server：
+推荐让 `start.cmd` 自动启动 OpenCode Server。如需手工启动，先加载私有环境后运行：
 
 ```powershell
+$env:PATH = "$PWD\.runtime\node;$PWD\.runtime\npm-global;$env:PATH"
 $env:OPENCODE_SERVER_PASSWORD = "评测环境中的本地服务密码"
-opencode serve --hostname 127.0.0.1 --port 4096
+.\.runtime\npm-global\opencode.cmd serve --hostname 127.0.0.1 --port 4096
 ```
 
 另一个 PowerShell 中令 `.env` 的 `OPENCODE_SERVER_PASSWORD` 与上面一致。
 
 ## 2. 编译与自检
 
-本项目为原生 Node.js ESM，无编译步骤、无项目依赖下载。执行：
+本项目为原生 Node.js ESM，无编译步骤。使用私有 Node 执行：
 
 ```powershell
-npm test
+.\test.cmd
 ```
 
 全部测试通过即完成自检。测试包含官方 Agent 网关接口契约。
@@ -45,17 +47,17 @@ npm test
 
 ```powershell
 # OpenCode 轮次
-.\gateway.cmd --engine opencode --port 6217 --host localhost
+.\start.cmd --engine opencode --port 6217 --host localhost
 
 # Pi Agent 轮次（先停止上一轮网关）
-.\gateway.cmd --engine pi --port 6217 --host localhost
+.\start.cmd --engine pi --port 6217 --host localhost
 ```
 
 也可以通过任务书要求的环境变量切换：
 
 ```powershell
 $env:AGENT_ENGINE = "opencode" # 或 pi
-npm start
+.\start.cmd
 ```
 
 日志出现 `Agent Gateway engine=<引擎> ... localhost:6217` 表示启动完成。`GET http://localhost:6217/health` 返回 `status=ok` 可作为健康检查。

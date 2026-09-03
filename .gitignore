@@ -5,6 +5,7 @@ data/pi-sessions/
 data/runtime/
 data/
 node_modules/
+.runtime/
 *.log
 test_runs/
 __pycache__/
