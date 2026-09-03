@@ -41,6 +41,7 @@ function requestContext(req, payload = {}) {
     conversationId: String(payload.conversationId ?? req.headers["x-conversation-id"] ?? "demo-conversation"),
     engine: payload.engine ?? req.headers["x-agent-engine"] ?? undefined,
     allowedEngines: payload.allowedEngines,
+    directory: payload.directory ?? req.headers["x-agent-directory"] ?? undefined,
   };
 }
 

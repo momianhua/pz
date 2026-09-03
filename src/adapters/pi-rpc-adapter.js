@@ -7,6 +7,7 @@ import { StringDecoder } from "node:string_decoder";
 import { EngineAdapter } from "./adapter.js";
 import { GatewayError } from "../core/errors.js";
 import { event } from "../core/events.js";
+import { withRuntimeGuidance } from "../core/runtime-guidance.js";
 
 export function resolveCommand(command) {
   if (process.platform !== "win32" || extname(command) || command.includes("/") || command.includes("\\")) return command;
@@ -166,8 +167,8 @@ export class PiRpcAdapter extends EngineAdapter {
   childEnvironment() {
     return {
       ...process.env,
+      PI_CODING_AGENT_DIR: this.config.piAgentDir,
       ...(this.config.localModelBaseUrl ? {
-        PI_CODING_AGENT_DIR: this.config.piAgentDir,
         LOCAL_MODEL_API_KEY: this.config.localModelApiKey,
         LOCAL_MODEL_AUTH_VALUE: this.config.localModelAuthValue,
       } : {}),
@@ -194,9 +195,10 @@ export class PiRpcAdapter extends EngineAdapter {
 
   async *run({ runId, engineSessionId, input, importedHistory = [], model, signal }) {
     const process = await this.ensureProcess(engineSessionId);
+    const guidedInput = withRuntimeGuidance(input, "pi");
     const prompt = importedHistory.length
-      ? `以下是从其他引擎迁移的对话记录，仅作为上下文：\n${importedHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}\n\n当前请求：${input}`
-      : input;
+      ? `以下是从其他引擎迁移的对话记录，仅作为上下文：\n${importedHistory.map((m) => `${m.role}: ${m.content}`).join("\n")}\n\n当前请求：${guidedInput}`
+      : guidedInput;
     yield event("run.started", "pi", runId, { engineSessionId });
     if (model?.providerID && model?.modelID) {
       const modelRequestId = randomUUID();

@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 function integer(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? String(fallback), 10);
@@ -57,6 +57,9 @@ export function loadConfig(overrides = {}) {
     piModel: process.env.PI_MODEL || (localModelBaseUrl ? localModelId : ""),
     piSessionRoot: resolve(process.env.PI_SESSION_ROOT ?? "./data/pi-sessions"),
     piAgentDir: resolve(process.env.PI_AGENT_DIR ?? "./data/runtime/pi-agent"),
+    piShellPath: process.env.PI_SHELL_PATH ?? (process.platform === "win32"
+      ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+      : ""),
     openCodeBaseUrl: process.env.OPENCODE_BASE_URL ?? "http://127.0.0.1:4096",
     openCodeUsername: process.env.OPENCODE_SERVER_USERNAME ?? "opencode",
     openCodePassword: process.env.OPENCODE_SERVER_PASSWORD ?? "",

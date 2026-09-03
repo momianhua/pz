@@ -44,6 +44,49 @@ test("OpenCode SSE parser supports named events and multiline data", async () =>
   assert.deepEqual(events, [{ event: "message", data: '{"type":"message.part.delta",\n"properties":{"delta":"hello"}}' }]);
 });
 
+test("OpenCode run exits when the gateway aborts while waiting for events", async () => {
+  const server = createServer((request, response) => {
+    const url = new URL(request.url, "http://localhost");
+    if (request.method === "GET" && url.pathname === "/event") {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.flushHeaders();
+      response.write('data: {"type":"server.connected","properties":{}}\n\n');
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/session/ses-abort/prompt_async") {
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/session/ses-abort/abort") {
+      response.end('{"ok":true}');
+      return;
+    }
+    response.statusCode = 404;
+    response.end("{}");
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const adapter = new OpenCodeHttpAdapter({
+    openCodeBaseUrl: `http://127.0.0.1:${server.address().port}`,
+    openCodeUsername: "opencode", openCodePassword: "", openCodeDirectory: process.cwd(),
+    openCodeProviderId: "provider", openCodeModelId: "model", openCodePermissionMode: "allow",
+  });
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(new Error("Gateway run timeout")), 200);
+  try {
+    await assert.rejects(async () => {
+      for await (const _item of adapter.run({ runId: "run-abort", engineSessionId: "ses-abort", input: "wait", signal: controller.signal })) {
+        // Consume until the abort is observed.
+      }
+    }, /Gateway run timeout/);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+    await once(server, "close");
+  }
+});
+
 test("OpenCode adapter filters global events and combines SSE with final response", async () => {
   const eventClients = new Set();
   let deleted = false;

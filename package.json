@@ -10,6 +10,7 @@
     "start:opencode": "node --env-file-if-exists=.env src/server.js --engine opencode --port 6217 --host localhost",
     "dev": "node --env-file-if-exists=.env --watch src/server.js",
     "test": "node --test",
+    "test:data": "node --env-file-if-exists=.env scripts/evaluate-dataset.js",
     "demo": "node scripts/demo.js"
   },
   "bin": {

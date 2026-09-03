@@ -14,6 +14,7 @@ async function fixture() {
   const { port } = app.server.address();
   return {
     app,
+    directory,
     baseUrl: `http://127.0.0.1:${port}`,
     async close() {
       app.server.close();
@@ -41,6 +42,17 @@ test("same business conversation reuses the Pi engine binding", async () => {
     const session = f.app.gateway.getSession("t1", "group-a");
     assert.equal(Object.keys(session.bindings).length, 1);
     assert.equal(session.history.length, 4);
+  } finally { await f.close(); }
+});
+
+test("compatibility chat endpoint forwards the requested working directory", async () => {
+  const f = await fixture();
+  try {
+    const result = await post(`${f.baseUrl}/api/chat`, {
+      tenantId: "t1", conversationId: "directory-test", engine: "pi", input: "write a file", directory: f.directory,
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(f.app.gateway.getSession("t1", "directory-test").directory, f.directory);
   } finally { await f.close(); }
 });
 

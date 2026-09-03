@@ -16,6 +16,7 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     openCodePermissionMode: "ask",
     localModelAuthHeader: "Auth",
     piAgentDir: join(root, "pi-agent"),
+    piShellPath: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
   };
   try {
     await prepareLocalModelRuntime(config);
@@ -25,6 +26,8 @@ test("local model env creates project-scoped Pi and inline OpenCode configuratio
     assert.equal(pi.providers["local-8017"].authHeader, false);
     assert.equal(pi.providers["local-8017"].headers.Auth, "$LOCAL_MODEL_AUTH_VALUE");
     assert.equal(pi.providers["local-8017"].models[0].id, "deepseek");
+    const settings = JSON.parse(await readFile(join(root, "pi-agent", "settings.json"), "utf8"));
+    assert.equal(settings.shellPath, config.piShellPath);
 
     const openCode = JSON.parse(openCodeInlineConfig(config));
     assert.equal(openCode.provider["local-8017"].options.baseURL, "http://127.0.0.1:8017/v1");

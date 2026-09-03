@@ -1,6 +1,7 @@
 import { EngineAdapter } from "./adapter.js";
 import { GatewayError } from "../core/errors.js";
 import { event } from "../core/events.js";
+import { withRuntimeGuidance } from "../core/runtime-guidance.js";
 
 export async function* parseSse(body) {
   const decoder = new TextDecoder();
@@ -283,14 +284,16 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
 
   async *run({ runId, engineSessionId, input, importedHistory = [], model, signal }) {
     const directory = this.sessionDirectories.get(engineSessionId) ?? this.directory;
+    const guidedInput = withRuntimeGuidance(input, "opencode");
     const contextualInput = importedHistory.length
-      ? `以下是从其他引擎迁移的对话记录，仅作为上下文：\n${importedHistory.map((message) => `${message.role}: ${message.content}`).join("\n")}\n\n当前请求：${input}`
-      : input;
+      ? `以下是从其他引擎迁移的对话记录，仅作为上下文：\n${importedHistory.map((message) => `${message.role}: ${message.content}`).join("\n")}\n\n当前请求：${guidedInput}`
+      : guidedInput;
     yield event("run.started", "opencode", runId, { engineSessionId });
 
     const eventController = new AbortController();
     const queue = new AsyncQueue();
     const abort = () => {
+      queue.push({ kind: "requestError", error: signal?.reason ?? new DOMException("Aborted", "AbortError") });
       eventController.abort();
       void fetch(this.url(`/session/${encodeURIComponent(engineSessionId)}/abort`, directory), { method: "POST", headers: this.headers() }).catch(() => {});
     };

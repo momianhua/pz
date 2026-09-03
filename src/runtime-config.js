@@ -44,8 +44,11 @@ export function openCodeInlineConfig(config) {
 
 export async function prepareLocalModelRuntime(config) {
   const model = localModelDefinition(config);
-  if (!model) return;
   await mkdir(config.piAgentDir, { recursive: true });
+  if (config.piShellPath) {
+    await writeFile(`${config.piAgentDir}/settings.json`, JSON.stringify({ shellPath: config.piShellPath }, null, 2), "utf8");
+  }
+  if (!model) return;
   const piConfig = {
     providers: {
       [model.providerId]: {
