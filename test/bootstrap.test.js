@@ -34,6 +34,10 @@ test("Windows bootstrap reuses compatible tools and securely installs missing ru
   assert.match(setup, /InstallGlobalCommand/);
   assert.match(setup, /Install-GatewayCommand/);
   assert.match(setup, /POST_SETUP_SCRIPT/);
+  assert.match(setup, /ContainsKey\('NPM_CONFIG_REGISTRY'\)/);
+  assert.match(setup, /ContainsKey\('PIP_INDEX_URL'\)/);
+  assert.match(setup, /Using NPM_CONFIG_REGISTRY from/);
+  assert.match(setup, /Using PIP_INDEX_URL from/);
   assert.match(setup, /Invoke-PostSetupScript/);
   assert.match(setup, /Post-setup script failed with exit code/);
   assert.match(setup, /--upgrade --target/);

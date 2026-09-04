@@ -302,6 +302,14 @@ function Install-GatewayCommand([string]$binDirectory, [bool]$persistUserPath) {
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Only 64-bit Windows 10/11 is supported." }
 $setupEnvironmentFile = Join-Path $Root ".setup.env"
 $setupEnvironment = Read-SetupEnvironment $setupEnvironmentFile
+if (-not $NpmRegistry -and $setupEnvironment.ContainsKey('NPM_CONFIG_REGISTRY')) {
+  $NpmRegistry = [string]$setupEnvironment['NPM_CONFIG_REGISTRY']
+  Write-Host "Using NPM_CONFIG_REGISTRY from $setupEnvironmentFile"
+}
+if (-not $PipIndexUrl -and $setupEnvironment.ContainsKey('PIP_INDEX_URL')) {
+  $PipIndexUrl = [string]$setupEnvironment['PIP_INDEX_URL']
+  Write-Host "Using PIP_INDEX_URL from $setupEnvironmentFile"
+}
 if (-not $PostSetupScript -and $setupEnvironment.ContainsKey('POST_SETUP_SCRIPT')) {
   $PostSetupScript = [string]$setupEnvironment['POST_SETUP_SCRIPT']
   Write-Host "Using POST_SETUP_SCRIPT from $setupEnvironmentFile"
