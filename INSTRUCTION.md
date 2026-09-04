@@ -57,8 +57,11 @@ $env:AGENT_ENGINE = "pi"
 
 也可直接使用参数：
 
-```powershell
+```cwd
 .\gateway.cmd --engine opencode --host localhost --port 6217
+```
+或者
+```cwd
 .\gateway.cmd --engine pi --host localhost --port 6217
 ```
 
