@@ -45,6 +45,45 @@ function Find-Application([string[]]$names) {
   }
   return ""
 }
+function Find-CompatiblePython {
+  $candidates = [Collections.Generic.List[string]]::new()
+  $pathPython = Find-Application @("python.exe", "python")
+  if ($pathPython) { [void]$candidates.Add($pathPython) }
+
+  $launcher = Find-Application @("py.exe", "py")
+  if ($launcher) {
+    $registered = & $launcher -0p 2>$null | Out-String
+    foreach ($match in [regex]::Matches($registered, '[A-Za-z]:\\[^\r\n]*?python\.exe')) {
+      [void]$candidates.Add($match.Value.Trim())
+    }
+  }
+
+  foreach ($registryRoot in @(
+    'HKCU:\Software\Python\PythonCore',
+    'HKLM:\Software\Python\PythonCore',
+    'HKLM:\Software\WOW6432Node\Python\PythonCore'
+  )) {
+    if (-not (Test-Path $registryRoot)) { continue }
+    foreach ($versionKey in Get-ChildItem $registryRoot -ErrorAction SilentlyContinue) {
+      $installKeyPath = Join-Path $versionKey.PSPath 'InstallPath'
+      if (-not (Test-Path $installKeyPath)) { continue }
+      $installKey = Get-Item $installKeyPath
+      $properties = Get-ItemProperty $installKeyPath
+      $executableProperty = $properties.PSObject.Properties['ExecutablePath']
+      if ($executableProperty -and $executableProperty.Value) {
+        [void]$candidates.Add([string]$executableProperty.Value)
+      } else {
+        $installDirectory = [string]$installKey.GetValue('')
+        if ($installDirectory) { [void]$candidates.Add((Join-Path $installDirectory 'python.exe')) }
+      }
+    }
+  }
+
+  foreach ($candidate in $candidates | Select-Object -Unique) {
+    if ((Parsed-Version (Version-Of $candidate)) -ge [version]"3.12.10") { return $candidate }
+  }
+  return ""
+}
 function Hash-Of([string]$path) {
   return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -105,8 +144,8 @@ $pythonSource = ""
 if ((Parsed-Version (Version-Of $privatePython)) -ge [version]"3.12.10") {
   $python = $privatePython; $pythonSource = "project-private"
 } else {
-  $candidate = Find-Application @("python.exe", "python")
-  if ((Parsed-Version (Version-Of $candidate)) -ge [version]"3.12.10") {
+  $candidate = Find-CompatiblePython
+  if ($candidate) {
     $python = $candidate; $pythonSource = "system"
   }
 }
@@ -119,14 +158,24 @@ if (-not $python) {
   if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Python Software Foundation") {
     throw "Python installer signature validation failed: $($signature.Status)"
   }
+  Assert-RuntimePath $PythonRoot
+  if (Test-Path -LiteralPath $PythonRoot) { Remove-Item -LiteralPath $PythonRoot -Recurse -Force }
   New-Item -ItemType Directory -Force -Path $PythonRoot | Out-Null
-  $arguments = "/quiet InstallAllUsers=0 TargetDir=`"$PythonRoot`" Include_pip=1 Include_launcher=0 Include_test=0 Include_doc=0 Include_tcltk=0 AssociateFiles=0 Shortcuts=0 PrependPath=0 AppendPath=0"
+  $installLog = Join-Path $Runtime "python-install.log"
+  $arguments = "/quiet /log `"$installLog`" InstallAllUsers=0 TargetDir=`"$PythonRoot`" Include_pip=1 Include_launcher=0 Include_test=0 Include_doc=0 Include_tcltk=0 AssociateFiles=0 Shortcuts=0 PrependPath=0 AppendPath=0"
   $process = Start-Process -FilePath $installerPath -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
   if ($process.ExitCode -notin @(0, 3010)) { throw "Python installer exited with code $($process.ExitCode)" }
-  $python = $privatePython; $pythonSource = "downloaded-private"
+  if (Version-Of $privatePython) {
+    $python = $privatePython; $pythonSource = "downloaded-private"
+  } else {
+    $python = Find-CompatiblePython
+    $pythonSource = "installer-registered"
+  }
 }
 $pythonVersion = Version-Of $python
-if (-not $pythonVersion) { throw "Python validation failed" }
+if (-not $pythonVersion) {
+  throw "Python installer returned success but no runnable Python was found. See $Runtime\python-install.log"
+}
 Write-Host "Using $pythonVersion ($pythonSource): $python"
 
 $nodeDir = Split-Path -Parent $node

@@ -16,6 +16,8 @@ test("Windows bootstrap reuses compatible tools and securely installs missing ru
   assert.match(setup, /InstallAllUsers=0/);
   assert.match(setup, /npm-global/);
   assert.match(setup, /Find-Application/);
+  assert.match(setup, /Find-CompatiblePython/);
+  assert.match(setup, /python-install\.log/);
   assert.match(setup, /22\.19\.0/);
   assert.match(setup, /Copy-Item.*\.env\.example/);
 });
