@@ -8,10 +8,12 @@
 - 初始依赖：Windows PowerShell（无需预装 Node.js、Python、Pi、OpenCode，无需管理员权限）
 
 如果已有对应环境，则执行：
+```powershell
 npm install -g @earendil-works/pi-coding-agent@0.84.4
 npm install -g opencode-ai@1.18.25
+```
 
-如果没有对应环境，已连接外网可直接下载环境，则执行：
+如果没有对应环境，已连接外网可直接下载环境，在solution/code源代码目录下执行：
 ```powershell
 .\setup.cmd
 ```
@@ -59,14 +61,23 @@ LOCAL_MODEL_AUTH_VALUE=<Header 完整值>
 ## 3. 启动服务
 
 3.1 如果已有对应环境（未使用setup.cwd），则使用：
+```cwd
 npm start --engine opencode
-或者 npm start --engine opencode --host localhost --port 6217
-启动服务并指定引擎
+```
+或者如下启动服务并指定引擎
+```cwd
+npm start --engine opencode --host localhost --port 6217
+```
 
-3.2 如果执行过setup.cwd安装环境，则使用：
+
+3.2 如果执行过setup.cwd安装环境，则在solution/code源代码目录下使用：
+```cwd
 .\start.cmd --engine pi
-或者 .\start.cmd --engine pi --host localhost --port 6217
-启动服务并指定引擎
+```
+或者如下启动服务并指定引擎
+```cwd
+.\start.cmd --engine pi --host localhost --port 6217
+```
 
 
 切换引擎前先按 `Ctrl+C` 停止上一轮。出现以下日志即启动成功：
