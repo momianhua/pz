@@ -29,24 +29,12 @@ python -m pip install -r requirements-test.txt
 编辑 `.env`。OpenAI 兼容模型的最小真实运行配置如下：
 
 ```dotenv
-// 真实环境
-ENGINE_MODE=real
-// 默认启动模式，也可用命令行指定
-AGENT_ENGINE=opencode
-
 // 模型服务地址
-LOCAL_MODEL_BASE_URL=http://<模型服务IP>:<端口>/v1
-// Provider ID，无填写要求，固定值即可，例如：local-8017
-LOCAL_MODEL_PROVIDER_ID=<Provider ID>
-// 模型名称，连接时需填写的模型名称，例如：GLM-V5_1-DX
-LOCAL_MODEL_ID=<评测模型ID>
+LOCAL_MODEL_BASE_URL=http://aigateway.huawei.com/v1
+// 模型名称，连接时需填写的模型名称
+LOCAL_MODEL_ID=GLM-V5_1-DX
 // 请求头Authorization的值，用于鉴权
-LOCAL_MODEL_API_KEY=<API Key>
-
-// 为true则opencode会自动使用同一个模型启动服务
-OPENCODE_AUTOSTART=true
-// opencode权限申请，allow为全部同意，ask为询问
-OPENCODE_PERMISSION_MODE=allow
+LOCAL_MODEL_API_KEY=Bearer sk-7xxxxxxxx
 // 会话超时时间，发送消息时未返回结果，最多等待的时间
 RUN_TIMEOUT_MS=600000
 ```
