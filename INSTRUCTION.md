@@ -7,13 +7,17 @@
 - 网络：首次安装依赖和访问模型服务时可联网
 - 初始依赖：Windows PowerShell（无需预装 Node.js、Python、Pi、OpenCode，无需管理员权限）
 
-如果已有对应环境，则执行：
-```powershell
+如果已有对应node和python环境，则执行：
+```cwd
 npm install -g @earendil-works/pi-coding-agent@0.84.4
 npm install -g opencode-ai@1.18.25
 ```
+在solution/code源代码目录下执行：
+```cwd
+python -m pip install -r requirements-test.txt
+```
 
-如果没有对应环境，已连接外网可直接下载环境，在solution/code源代码目录下执行：
+如果没有对应node和python环境，已连接外网可直接下载环境，在solution/code源代码目录下执行：
 ```powershell
 .\setup.cmd
 ```
