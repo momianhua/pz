@@ -36,7 +36,7 @@ LOCAL_MODEL_BASE_URL=http://aigateway.huawei.com/v1
 # 模型名称，连接时需填写的模型名称
 LOCAL_MODEL_ID=GLM-V5_1-DX
 # API Key；标准鉴权会自动生成 Authorization: Bearer <API Key>
-LOCAL_MODEL_API_KEY=sk-7xxxxxxxx
+LOCAL_MODEL_API_KEY=Bearer sk-7xxxxxxxx
 # 会话超时时间，发送消息时未返回结果，最多等待的时间
 RUN_TIMEOUT_MS=600000
 ```
@@ -54,26 +54,14 @@ LOCAL_MODEL_AUTH_VALUE=<Header 完整值>
 
 环境准备完成后统一使用 `gateway.cmd`，无需区分系统环境和项目私有环境。
 
-```powershell
-$env:AGENT_ENGINE = "opencode"
-.\gateway.cmd
-```
-
-启动 Pi：
-
-```powershell
-$env:AGENT_ENGINE = "pi"
-.\gateway.cmd
-```
-
-也可直接使用参数：
+在solution\code目录下可直接使用参数：
 
 ```cwd
-.\gateway.cmd --engine opencode --host localhost --port 6217
+gateway --engine opencode --host localhost --port 6217
 ```
 或者
 ```cwd
-.\gateway.cmd --engine pi --host localhost --port 6217
+gateway --engine pi --host localhost --port 6217
 ```
 
 
