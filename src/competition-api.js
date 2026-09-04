@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { GatewayError, normalizeError } from "./core/errors.js";
+import { GatewayError } from "./core/errors.js";
 
 const TENANT_ID = "contest-evaluator";
 
@@ -14,6 +14,18 @@ function optionalText(value, name) {
   if (value === undefined || value === null || value === "") return "";
   if (typeof value !== "string") throw new GatewayError("VALIDATION_ERROR", `${name} must be a string`, 400);
   return value.trim();
+}
+
+function requestObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new GatewayError("VALIDATION_ERROR", "request body must be a JSON object", 400);
+  }
+  return value;
+}
+
+function normalizeCompetitionError(error) {
+  if (error instanceof GatewayError) return error;
+  return new GatewayError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error), 500);
 }
 
 export class CompetitionApi {
@@ -81,12 +93,12 @@ export class CompetitionApi {
       }
 
       if (req.method === "POST" && url.pathname === "/session") {
-        const payload = await readBody(req);
+        const payload = requestObject(await readBody(req));
         const id = `ses_${randomUUID().replaceAll("-", "")}`;
         const title = optionalText(payload.title, "title") || `评测会话-${id.slice(-8)}`;
         const directory = optionalText(payload.directory, "directory")
-          || optionalText(url.searchParams.get("directory"), "directory")
-          || this.config.openCodeDirectory;
+          || optionalText(url.searchParams.get("directory"), "directory");
+        if (!directory) throw new GatewayError("VALIDATION_ERROR", "directory is required", 400);
         const session = { id, title, directory, created_at: new Date().toISOString(), status: "idle", messages: [] };
         this.sessions.set(id, session);
         await this.gateway.ensureSession(TENANT_ID, id, { title, directory });
@@ -104,8 +116,13 @@ export class CompetitionApi {
       const promptMatch = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
       if (req.method === "POST" && promptMatch) {
         const id = decodeURIComponent(promptMatch[1]);
-        const payload = await readBody(req);
-        await this.prompt(this.session(id), payload);
+        const payload = requestObject(await readBody(req));
+        const abortOnDisconnect = () => {
+          if (!res.writableFinished) this.abortControllers.get(id)?.abort(new Error("Client disconnected"));
+        };
+        res.once("close", abortOnDisconnect);
+        try { await this.prompt(this.session(id), payload); }
+        finally { res.removeListener("close", abortOnDisconnect); }
         res.writeHead(204).end();
         return true;
       }
@@ -151,7 +168,7 @@ export class CompetitionApi {
         const requestId = decodeURIComponent(questionReply[1]);
         const pending = this.questions.get(requestId);
         if (!pending) throw new GatewayError("NOT_FOUND", "Question request not found", 404);
-        const payload = await readBody(req);
+        const payload = requestObject(await readBody(req));
         if (!Array.isArray(payload.answers) || payload.answers.some((answer) => !Array.isArray(answer))) {
           throw new GatewayError("VALIDATION_ERROR", "answers must be an array of arrays", 400);
         }
@@ -176,11 +193,12 @@ export class CompetitionApi {
         const requestId = decodeURIComponent(permissionReply[1]);
         const pending = this.permissions.get(requestId);
         if (!pending) throw new GatewayError("NOT_FOUND", "Permission request not found", 404);
-        const payload = await readBody(req);
+        const payload = requestObject(await readBody(req));
         if (!["once", "always", "reject"].includes(payload.reply)) {
           throw new GatewayError("VALIDATION_ERROR", "reply must be once, always, or reject", 400);
         }
-        await this.gateway.replyPermission(pending._tenantId, pending._conversationId, requestId, payload.reply, payload.message);
+        const message = optionalText(payload.message, "message");
+        await this.gateway.replyPermission(pending._tenantId, pending._conversationId, requestId, payload.reply, message);
         this.permissions.delete(requestId);
         sendJson(res, 200, { ok: true });
         return true;
@@ -188,7 +206,7 @@ export class CompetitionApi {
 
       throw new GatewayError("NOT_FOUND", "Route not found", 404);
     } catch (error) {
-      const normalized = normalizeError(error);
+      const normalized = normalizeCompetitionError(error);
       const code = ["VALIDATION_ERROR", "NOT_FOUND", "INTERNAL_ERROR", "BAD_GATEWAY", "SERVICE_UNAVAILABLE"].includes(normalized.code)
         ? normalized.code
         : normalized.status === 400 ? "VALIDATION_ERROR"
@@ -206,12 +224,15 @@ export class CompetitionApi {
     if (!Array.isArray(payload.parts) || !payload.parts.length) {
       throw new GatewayError("VALIDATION_ERROR", "parts is required", 400);
     }
-    if (payload.parts.some((part) => part?.type !== "text" || typeof part.text !== "string")) {
-      throw new GatewayError("VALIDATION_ERROR", "parts currently supports text only", 400);
+    if (payload.parts.some((part) => part?.type !== "text" || typeof part.text !== "string" || !part.text.trim())) {
+      throw new GatewayError("VALIDATION_ERROR", "parts currently requires non-empty text items", 400);
     }
-    if (!payload.model || typeof payload.model.providerID !== "string" || typeof payload.model.modelID !== "string") {
+    if (!payload.model || typeof payload.model !== "object") {
       throw new GatewayError("VALIDATION_ERROR", "model.providerID and model.modelID are required", 400);
     }
+    const providerID = requiredText(payload.model.providerID, "model.providerID");
+    const modelID = requiredText(payload.model.modelID, "model.modelID");
+    const agent = payload.agent === undefined ? "assistant" : requiredText(payload.agent, "agent");
     const input = payload.parts.map((part) => part.text).join("");
     requiredText(input, "parts[].text");
     const now = new Date().toISOString();
@@ -236,7 +257,8 @@ export class CompetitionApi {
         input,
         engine: this.config.defaultEngine,
         directory: session.directory,
-        model: payload.model,
+        model: { ...payload.model, providerID, modelID },
+        agent,
         signal: controller.signal,
       });
       for await (const item of stream) this.consumeEngineEvent(session, assistant, item);
@@ -250,11 +272,15 @@ export class CompetitionApi {
       this.emit("session.idle", { sessionID: session.id });
     } catch (error) {
       session.status = "idle";
-      const normalized = normalizeError(error);
+      const normalized = normalizeCompetitionError(error);
       this.emit("session.error", {
         sessionID: session.id,
         error: { message: normalized.message, data: { responseBody: normalized.details ?? "" } },
       });
+      // A failed or timed-out run is terminal too. Publish the idle transition
+      // so SSE clients do not remain visually stuck in the busy state.
+      this.emit("session.status", { sessionID: session.id, status: { type: "idle" } });
+      this.emit("session.idle", { sessionID: session.id });
       throw error;
     } finally {
       this.abortControllers.delete(session.id);

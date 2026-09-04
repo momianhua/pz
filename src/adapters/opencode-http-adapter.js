@@ -70,6 +70,23 @@ function messageText(payload) {
     .join("");
 }
 
+function retryDelay(milliseconds, signal) {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    };
+    const timer = setTimeout(finish, milliseconds);
+    timer.unref?.();
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
 function nestedErrorMessage(value, seen = new Set(), depth = 0) {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (!value || typeof value !== "object" || depth > 6 || seen.has(value)) return null;
@@ -174,6 +191,9 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
     this.providerId = config.openCodeProviderId;
     this.modelId = config.openCodeModelId;
     this.permissionMode = config.openCodePermissionMode ?? "allow";
+    this.controlRequestTimeoutMs = Number.isInteger(config.openCodeControlRequestTimeoutMs) && config.openCodeControlRequestTimeoutMs > 0
+      ? config.openCodeControlRequestTimeoutMs
+      : 10_000;
     this.sessionDirectories = new Map();
     this.seenInteractionEvents = new Set();
   }
@@ -202,20 +222,57 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
     return headers;
   }
 
-  async checkedFetch(path, init = {}, directory = this.directory) {
-    let response;
-    try {
-      response = await fetch(this.url(path, directory), init);
-    } catch (error) {
-      if (error.name === "AbortError") throw error;
-      const cause = error.cause?.code ?? error.cause?.message;
-      throw new GatewayError("ENGINE_UNAVAILABLE", `Cannot reach OpenCode: ${error.message}${cause ? ` (${cause})` : ""}`, 503);
+  async checkedFetch(path, init = {}, directory = this.directory, policy = {}) {
+    const method = (init.method ?? "GET").toUpperCase();
+    const attempts = policy.attempts ?? (["GET", "HEAD"].includes(method) ? 3 : 1);
+    const timeoutMs = policy.timeoutMs === undefined ? this.controlRequestTimeoutMs : policy.timeoutMs;
+    const connectionOnlyTimeout = policy.connectionOnlyTimeout === true;
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      let requestTimer;
+      try {
+        const requestController = timeoutMs > 0 ? new AbortController() : null;
+        if (requestController) {
+          requestTimer = setTimeout(() => requestController.abort(new Error(`OpenCode request timeout after ${timeoutMs} ms`)), timeoutMs);
+          requestTimer.unref?.();
+        }
+        const signal = requestController && init.signal
+          ? AbortSignal.any([init.signal, requestController.signal])
+          : (init.signal ?? requestController?.signal);
+        const response = await fetch(this.url(path, directory), { ...init, signal });
+        if (connectionOnlyTimeout) {
+          clearTimeout(requestTimer);
+          requestTimer = undefined;
+        }
+        if (response.ok) {
+          // Keep the timeout signal alive while callers consume short response bodies.
+          // The timer is unref'ed and harmless after the body has completed.
+          if (!connectionOnlyTimeout) requestTimer = undefined;
+          return response;
+        }
+        const detail = (await response.text()).slice(0, 2000);
+        const error = new GatewayError(
+          response.status >= 500 ? "ENGINE_UNAVAILABLE" : "ENGINE_ERROR",
+          `OpenCode returned ${response.status}: ${detail}`,
+          response.status >= 500 ? 503 : 502,
+          { upstreamStatus: response.status },
+        );
+        if (response.status < 500 || attempt === attempts) throw error;
+        lastError = error;
+      } catch (error) {
+        if (init.signal?.aborted) throw init.signal.reason ?? error;
+        lastError = error instanceof GatewayError ? error : new GatewayError(
+          "ENGINE_UNAVAILABLE",
+          `Cannot reach OpenCode: ${error.message}${error.cause?.code || error.cause?.message ? ` (${error.cause.code ?? error.cause.message})` : ""}`,
+          503,
+        );
+        if (attempt === attempts) throw lastError;
+      } finally {
+        clearTimeout(requestTimer);
+      }
+      await retryDelay(150 * (2 ** (attempt - 1)), init.signal);
     }
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 2000);
-      throw new GatewayError("ENGINE_ERROR", `OpenCode returned ${response.status}: ${detail}`, 502);
-    }
-    return response;
+    throw lastError;
   }
 
   rememberInteraction(type, requestId) {
@@ -262,18 +319,19 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
 
   async healthCheck() {
     try {
-      const response = await this.checkedFetch("/global/health", { headers: this.headers() });
+      const response = await this.checkedFetch("/global/health", { headers: this.headers(), signal: AbortSignal.timeout(5000) });
       return { status: "healthy", ...(await response.json()) };
     } catch (error) {
       return { status: "unhealthy", detail: error.message };
     }
   }
 
-  async createSession({ logicalSessionId, directory }) {
+  async createSession({ logicalSessionId, directory, signal }) {
     const response = await this.checkedFetch("/session", {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({ title: logicalSessionId }),
+      signal,
     }, directory || this.directory);
     const payload = await response.json();
     const id = payload.id ?? payload.sessionID ?? payload.data?.id;
@@ -282,7 +340,7 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
     return { id: String(id), logicalSessionId };
   }
 
-  async *run({ runId, engineSessionId, input, importedHistory = [], model, signal }) {
+  async *run({ runId, engineSessionId, input, importedHistory = [], model, agent, signal }) {
     const directory = this.sessionDirectories.get(engineSessionId) ?? this.directory;
     const guidedInput = withRuntimeGuidance(input, "opencode");
     const contextualInput = importedHistory.length
@@ -297,13 +355,15 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
       eventController.abort();
       void fetch(this.url(`/session/${encodeURIComponent(engineSessionId)}/abort`, directory), { method: "POST", headers: this.headers() }).catch(() => {});
     };
-    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
     let pump;
+    let completedSuccessfully = false;
     try {
       const eventResponse = await this.checkedFetch("/event", {
         headers: this.headers({ Accept: "text/event-stream" }),
         signal: eventController.signal,
-      }, directory);
+      }, directory, { timeoutMs: 10_000, connectionOnlyTimeout: true });
       pump = (async () => {
         try {
           for await (const item of parseSse(eventResponse.body)) {
@@ -317,7 +377,7 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
         }
       })();
 
-      const requestBody = { parts: [{ type: "text", text: contextualInput }] };
+      const requestBody = { parts: [{ type: "text", text: contextualInput }], ...(agent ? { agent } : {}) };
       const selectedModel = model?.providerID && model?.modelID ? model : (this.providerId && this.modelId
         ? { providerID: this.providerId, modelID: this.modelId }
         : null);
@@ -327,7 +387,7 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
         headers: this.headers(),
         body: JSON.stringify(requestBody),
         signal,
-      }, directory).then(() => queue.push({ kind: "accepted" }))
+      }, directory, { timeoutMs: 0 }).then(() => queue.push({ kind: "accepted" }))
         .catch((error) => queue.push({ kind: "requestError", error }));
 
       let streamedText = "";
@@ -397,10 +457,16 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
         yield event("message.delta", "opencode", runId, { delta: finalText.slice(streamedText.length), fallback: "response-tail" });
       }
       yield event("message.completed", "opencode", runId, { text: finalText || streamedText });
+      completedSuccessfully = true;
       yield event("run.completed", "opencode", runId, { finishReason: "stop" });
     } finally {
       eventController.abort();
       signal?.removeEventListener("abort", abort);
+      if (!completedSuccessfully && !signal?.aborted) {
+        void fetch(this.url(`/session/${encodeURIComponent(engineSessionId)}/abort`, directory), {
+          method: "POST", headers: this.headers(), signal: AbortSignal.timeout(5000),
+        }).catch(() => {});
+      }
       await pump?.catch(() => {});
     }
   }

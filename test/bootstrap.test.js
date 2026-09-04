@@ -24,6 +24,8 @@ test("Windows bootstrap reuses compatible tools and securely installs missing ru
   assert.match(setup, /Invoke-NativeCapture/);
   assert.match(setup, /python-install\.log/);
   assert.match(setup, /Invoke-NativeQuiet/);
+  assert.match(setup, /expectedPackages/);
+  assert.match(setup, /requirements-test\.txt must use exact package pins/);
   assert.match(setup, /importExitCode = Invoke-NativeQuiet/);
   assert.match(setup, /22\.19\.0/);
   assert.match(setup, /Npm-ForNode/);

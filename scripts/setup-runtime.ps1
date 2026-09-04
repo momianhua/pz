@@ -416,7 +416,18 @@ if (-not $SkipPythonPackages) {
   Step "Checking Python dependencies"
   New-Item -ItemType Directory -Force -Path $PythonPackages | Out-Null
   $env:PYTHONPATH = if ($env:PYTHONPATH) { "$PythonPackages;$env:PYTHONPATH" } else { $PythonPackages }
-  $dependencyCheck = "from importlib.metadata import version; expected={'python-docx':'1.2.0','openpyxl':'3.1.5','python-pptx':'1.0.2','requests':'2.32.5'}; raise SystemExit(0 if all(version(k)==v for k,v in expected.items()) else 1)"
+  $expectedPackages = [ordered]@{}
+  foreach ($requirementLine in Get-Content -LiteralPath (Join-Path $Root "requirements-test.txt")) {
+    $trimmed = $requirementLine.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+    if ($trimmed -notmatch '^([A-Za-z0-9_.-]+)==([^\s;]+)$') {
+      throw "requirements-test.txt must use exact package pins (name==version): $trimmed"
+    }
+    $expectedPackages[$Matches[1]] = $Matches[2]
+  }
+  $expectedJson = $expectedPackages | ConvertTo-Json -Compress
+  $expectedBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($expectedJson))
+  $dependencyCheck = "import base64,json; from importlib.metadata import version; expected=json.loads(base64.b64decode('$expectedBase64')); raise SystemExit(0 if all(version(k)==v for k,v in expected.items()) else 1)"
   $importExitCode = Invoke-NativeQuiet -exe $python -arguments @("-c", $dependencyCheck)
   if ($importExitCode -eq 0) {
     Write-Host "Required Python packages are already available"

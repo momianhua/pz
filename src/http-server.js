@@ -68,7 +68,14 @@ export function createHttpServer({ gateway, config }) {
         if (await serveStatic(url.pathname, res)) return;
       }
       if (req.method === "GET" && url.pathname === "/health") {
-        return json(res, 200, { status: "ok", engines: gateway.engines().map(({ name, mode }) => ({ name, mode })) });
+        const health = await gateway.health(config.defaultEngine);
+        return json(res, 200, {
+          status: "ok",
+          ready: health.status === "healthy",
+          activeEngine: config.defaultEngine,
+          health,
+          engines: gateway.engines().map(({ name, mode, circuitBreaker }) => ({ name, mode, circuitBreaker })),
+        });
       }
 
       if (await competition.handle(req, res, url, {
@@ -79,7 +86,7 @@ export function createHttpServer({ gateway, config }) {
       auth(req, config);
 
       if (req.method === "GET" && url.pathname === "/api/engines") {
-        const engines = await Promise.all(gateway.engines().map(async (metadata) => ({ ...metadata, health: await gateway.adapters.get(metadata.name).healthCheck() })));
+        const engines = await Promise.all(gateway.engines().map(async (metadata) => ({ ...metadata, health: await gateway.health(metadata.name) })));
         return json(res, 200, {
           activeEngine: config.defaultEngine,
           mode: config.engineMode,
@@ -152,7 +159,9 @@ export function createHttpServer({ gateway, config }) {
         const context = requestContext(req, { ...payload, engine: payload.engine ?? payload.metadata?.engine });
         const lastUser = [...(payload.messages ?? [])].reverse().find((message) => message.role === "user");
         const input = typeof lastUser?.content === "string" ? lastUser.content : "";
-        const engineStream = gateway.chat({ ...context, input });
+        const abortController = new AbortController();
+        res.on("close", () => { if (!res.writableFinished) abortController.abort(new Error("Client disconnected")); });
+        const engineStream = gateway.chat({ ...context, input, signal: abortController.signal });
         const observedStream = (async function* observeInteractions() {
           for await (const item of engineStream) {
             competition.consumeExternalEvent(context, item);

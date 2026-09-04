@@ -127,6 +127,10 @@ async function createSession() {
   if (state.sending) return;
   const title = $("#session-title").value.trim();
   const directory = $("#directory").value.trim();
+  if (!directory) {
+    notice("directory 是评测规范要求的必填工作目录", "error");
+    return;
+  }
   const session = await request("/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

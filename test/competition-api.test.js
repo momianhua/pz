@@ -93,6 +93,16 @@ test("official gateway errors use top-level code and message", async () => {
     assert.equal(generated.response.status, 200);
     assert.match(generated.body.title, /^评测会话-/);
     assert.equal(f.app.gateway.getSession("contest-evaluator", generated.body.id).directory, f.directory);
+    const missingDirectory = await jsonRequest(`${f.baseUrl}/session`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    });
+    assert.equal(missingDirectory.response.status, 400);
+    assert.deepEqual(missingDirectory.body, { code: "VALIDATION_ERROR", message: "directory is required" });
+    const nonObject = await jsonRequest(`${f.baseUrl}/session`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "null",
+    });
+    assert.equal(nonObject.response.status, 400);
+    assert.deepEqual(nonObject.body, { code: "VALIDATION_ERROR", message: "request body must be a JSON object" });
     const invalid = await jsonRequest(`${f.baseUrl}/session`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory: 42 }),
     });
@@ -101,6 +111,71 @@ test("official gateway errors use top-level code and message", async () => {
     const missing = await jsonRequest(`${f.baseUrl}/session/not-found`);
     assert.equal(missing.response.status, 404);
     assert.equal(missing.body.code, "NOT_FOUND");
+  } finally { await f.close(); }
+});
+
+test("official prompt validates all required fields as non-empty strings", async () => {
+  const f = await fixture();
+  try {
+    const created = await jsonRequest(`${f.baseUrl}/session`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory: f.directory }),
+    });
+    const invalidBodies = [
+      null,
+      { parts: [{ type: "text", text: " " }], model: { providerID: "p", modelID: "m" } },
+      { parts: [{ type: "text", text: "hello" }], model: { providerID: "", modelID: "m" } },
+      { parts: [{ type: "text", text: "hello" }], model: { providerID: "p", modelID: " " } },
+      { parts: [{ type: "text", text: "hello" }], model: { providerID: "p", modelID: "m" }, agent: 42 },
+    ];
+    for (const body of invalidBodies) {
+      const result = await jsonRequest(`${f.baseUrl}/session/${created.body.id}/prompt_async`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      assert.equal(result.response.status, 400, JSON.stringify(body));
+      assert.equal(result.body.code, "VALIDATION_ERROR");
+    }
+    assert.deepEqual((await jsonRequest(`${f.baseUrl}/session/status`)).body[created.body.id], { type: "idle" });
+    assert.deepEqual((await jsonRequest(`${f.baseUrl}/session/${created.body.id}/message`)).body, []);
+  } finally { await f.close(); }
+});
+
+test("unexpected local failures use the documented 500 error shape", async () => {
+  const store = {
+    get: () => null,
+    put: async () => { throw new Error("storage unavailable"); },
+    list: () => [],
+  };
+  const f = await fixture({ store });
+  try {
+    const result = await jsonRequest(`${f.baseUrl}/session`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory: f.directory }),
+    });
+    assert.equal(result.response.status, 500);
+    assert.deepEqual(result.body, { code: "INTERNAL_ERROR", message: "storage unavailable" });
+  } finally { await f.close(); }
+});
+
+test("a non-responsive engine times out and returns the session to idle", async () => {
+  const adapter = {
+    metadata: () => ({ name: "silent", displayName: "Silent", transport: "test", mode: "real" }),
+    healthCheck: async () => ({ status: "healthy" }),
+    createSession: async () => ({ id: "native-silent" }),
+    async *run() { await new Promise(() => {}); },
+  };
+  const f = await fixture({ adapters: [adapter], defaultEngine: "silent", runTimeoutMs: 40 });
+  try {
+    const created = await jsonRequest(`${f.baseUrl}/session`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory: f.directory }),
+    });
+    const prompted = await jsonRequest(`${f.baseUrl}/session/${created.body.id}/prompt_async`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "long task" }], model: { providerID: "p", modelID: "m" } }),
+    });
+    assert.equal(prompted.response.status, 504);
+    assert.equal(prompted.body.code, "BAD_GATEWAY");
+    assert.match(prompted.body.message, /Gateway run timeout/);
+    const status = await jsonRequest(`${f.baseUrl}/session/status`);
+    assert.deepEqual(status.body[created.body.id], { type: "idle" });
   } finally { await f.close(); }
 });
 
@@ -136,7 +211,7 @@ test("permission replies are idempotent and stale upstream requests are pruned",
   const f = await fixture({ adapters: [adapter], defaultEngine: "opencode" });
   try {
     const created = await jsonRequest(`${f.baseUrl}/session`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "权限测试" }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "权限测试", directory: f.directory }),
     });
     const send = () => jsonRequest(`${f.baseUrl}/session/${created.body.id}/prompt_async`, {
       method: "POST", headers: { "Content-Type": "application/json" },
