@@ -10,11 +10,10 @@ Windows 10/11 的全新沙箱只需要能够联网并带有系统自带的 Windo
 
 ```powershell
 .\setup.cmd
-Copy-Item .env.example .env
-.\start.cmd
+.\gateway.cmd --engine opencode
 ```
 
-`setup.cmd` 将 Node.js `22.23.2`、Python `3.12.10`、Pi `0.84.4`、OpenCode `1.18.25` 和 Office 测试依赖安装到项目的 `.runtime/`。下载文件使用固定 SHA-256 校验；`.runtime/` 不提交 Git，也不修改系统 PATH。`start.cmd` 只在当前进程树中把这些私有工具设为默认值，因此 Pi、OpenCode 及其终端工具看到的是同一套 Node/Python 环境。
+`setup.cmd` 是唯一的环境准备入口。它优先复用满足要求的系统或项目环境；缺少时将 Node.js `22.23.2`、Python `3.12.10`、Pi `0.84.4`、OpenCode `1.18.25` 安装到 `.runtime/`；随后检查 Python/Office 依赖并自动创建缺失的 `.env`。下载文件使用固定 SHA-256 校验，`.runtime/` 不提交 Git，也不修改系统 PATH。
 
 私有环境完整自检：
 
@@ -29,14 +28,15 @@ Copy-Item .env.example .env
 .\test-data.cmd --engine opencode
 ```
 
-首次安装需要联网；后续启动无需重新下载。重复执行 `setup.cmd` 会复用校验通过的下载和已安装组件。
+只有缺失的工具或依赖需要下载；已有环境不会重复安装。重复执行 `setup.cmd` 会重新校验并复用当前环境。
 
-## 已有运行时快速启动
+## 统一启动
 
-如果机器已经安装 Node.js `22.19.0` 或更高版本，可以继续使用：
+无论最初使用系统环境还是项目私有环境，完成一次 `setup.cmd` 后均使用赛事标准入口：
 
-```bash
-npm start
+```powershell
+.\gateway.cmd --engine opencode --port 6217
+.\gateway.cmd --engine pi --port 6217
 ```
 
 打开 <http://localhost:6217/>。默认端口遵循赛题接口规范；`mock` 模式下 Pi 与 OpenCode 都能直接演示，不需要模型密钥。
@@ -51,10 +51,10 @@ docker compose up --build
 
 ## 演示路径
 
-1. 使用 `npm start -- --engine pi` 启动，在页面左侧点击 `POST /session`；
+1. 使用 `.\gateway.cmd --engine pi` 启动，在页面左侧点击 `POST /session`；
 2. 发送消息，观察 `busy → idle` 状态和 `message.part.updated` SSE；
 3. 复制页面 Session ID，调用 `GET /session/{id}/message`，确认能查到页面中的同一组消息；
-4. 使用 `npm start -- --engine opencode` 重启，再重复相同评测流程；
+4. 使用 `.\gateway.cmd --engine opencode` 重启，再重复相同评测流程；
 5. 将 `OPENCODE_PERMISSION_MODE=ask` 后测试工具操作，可在页面直接处理 `/permission` 权限申请和 `/question` 反问。
 
 赛题规范要求在不同评测轮次通过启动参数切换引擎，而不是在同一网关进程中动态切换；页面会明确显示本次启动所用引擎。额外的 `/api/chat` 和会话级切换接口仍保留，供架构扩展测试使用。
@@ -113,7 +113,7 @@ tenantId + conversationId
 
 ```powershell
 .\gateway.cmd --engine opencode --port 6217 --host localhost
-$env:AGENT_ENGINE = "pi"; npm start
+$env:AGENT_ENGINE = "pi"; .\gateway.cmd
 ```
 
 以下 `/api/*` 是额外的网页演示接口，不影响比赛评测：

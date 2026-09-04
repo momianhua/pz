@@ -13,7 +13,7 @@
 .\setup.cmd
 ```
 
-`setup.cmd` 会将固定版本的 Node.js、Python、Pi、OpenCode 和 Office 测试依赖安装到 `.runtime/`，不修改系统 PATH。再次执行会复用已有环境。本项目为原生 Node.js ESM，无编译步骤。
+这是唯一的环境准备命令：它优先复用满足要求的现有 Node.js、Python、Pi 和 OpenCode；缺少时自动将固定版本安装到 `.runtime/`；同时检查并安装 Office 测试依赖，并在缺少时由 `.env.example` 创建 `.env`。它不修改系统 PATH，重复执行安全且会复用已有环境。本项目为原生 Node.js ESM，无编译步骤。
 
 ## 2. 模型配置
 
@@ -41,23 +41,25 @@ LOCAL_MODEL_AUTH_VALUE=<Header 完整值>
 
 ## 3. 启动服务
 
-3.1 如果已有对应环境（未使用setup.cwd），则使用：
-```cwd
-npm start --engine opencode
-```
-或者如下启动服务并指定引擎
-```cwd
-npm start --engine opencode --host localhost --port 6217
+环境准备完成后统一使用 `gateway.cmd`，无需区分系统环境和项目私有环境。
+
+```powershell
+$env:AGENT_ENGINE = "opencode"
+.\gateway.cmd
 ```
 
+启动 Pi：
 
-3.2 如果执行过setup.cwd安装环境，则在solution/code源代码目录下使用：
-```cwd
-.\start.cmd --engine pi
+```powershell
+$env:AGENT_ENGINE = "pi"
+.\gateway.cmd
 ```
-或者如下启动服务并指定引擎
-```cwd
-.\start.cmd --engine pi --host localhost --port 6217
+
+也可直接使用参数：
+
+```powershell
+.\gateway.cmd --engine opencode --host localhost --port 6217
+.\gateway.cmd --engine pi --host localhost --port 6217
 ```
 
 
