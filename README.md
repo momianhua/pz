@@ -30,6 +30,17 @@ Windows 10/11 的全新沙箱只需要能够联网并带有系统自带的 Windo
 
 只有缺失的工具或依赖需要下载；已有环境不会重复安装。重复执行 `setup.cmd` 会重新校验并复用当前环境。
 
+无公网环境可以使用本地安装包和内网软件源：
+
+```powershell
+$env:RUNTIME_PACKAGE_DIR = "D:\packages"
+$env:NPM_CONFIG_REGISTRY = "http://<内网NPM源>"
+$env:PIP_INDEX_URL = "http://<内网PyPI源>/simple"
+.\setup.cmd
+```
+
+本地安装包目录应包含 `node-v22.23.2-win-x64.zip` 和 `python-3.12.10-amd64.exe`。也可配置 `NODE_DOWNLOAD_BASE_URL`、`PYTHON_DOWNLOAD_BASE_URL` 使用内网下载服务；安装包始终校验固定 SHA-256。
+
 ## 统一启动
 
 无论最初使用系统环境还是项目私有环境，完成一次 `setup.cmd` 后均使用赛事标准入口：

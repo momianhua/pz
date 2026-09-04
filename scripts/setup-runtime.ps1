@@ -1,5 +1,12 @@
 [CmdletBinding()]
-param([switch]$SkipPythonPackages)
+param(
+  [switch]$SkipPythonPackages,
+  [string]$PackageDirectory = $env:RUNTIME_PACKAGE_DIR,
+  [string]$NodeDownloadBaseUrl = $env:NODE_DOWNLOAD_BASE_URL,
+  [string]$PythonDownloadBaseUrl = $env:PYTHON_DOWNLOAD_BASE_URL,
+  [string]$NpmRegistry = $env:NPM_CONFIG_REGISTRY,
+  [string]$PipIndexUrl = $env:PIP_INDEX_URL
+)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -19,6 +26,8 @@ $PythonRoot = Join-Path $Runtime "python"
 $PythonPackages = Join-Path $Runtime "python-packages"
 $NpmPrefix = Join-Path $Runtime "npm-global"
 $Cache = Join-Path $Runtime "cache"
+$NodeDownloadBaseUrl = if ($NodeDownloadBaseUrl) { $NodeDownloadBaseUrl.TrimEnd('/') } else { "https://nodejs.org/dist" }
+$PythonDownloadBaseUrl = if ($PythonDownloadBaseUrl) { $PythonDownloadBaseUrl.TrimEnd('/') } else { "https://www.python.org/ftp/python" }
 
 function Step([string]$text) { Write-Host "`n==> $text" -ForegroundColor Cyan }
 function Assert-RuntimePath([string]$path) {
@@ -30,9 +39,36 @@ function Assert-RuntimePath([string]$path) {
 }
 function Version-Of([string]$exe) {
   if (-not $exe -or -not (Test-Path -LiteralPath $exe)) { return "" }
-  $value = & $exe --version 2>&1 | Out-String
-  if ($LASTEXITCODE -ne 0) { return "" }
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $value = & $exe --version 2>&1 | Out-String
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+  if ($exitCode -ne 0) { return "" }
   return $value.Trim()
+}
+function Invoke-NativeQuiet([string]$exe, [string[]]$arguments) {
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    & $exe @arguments *> $null
+    return $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+}
+function Invoke-NativeCapture([string]$exe, [string[]]$arguments) {
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $output = & $exe @arguments 2>&1 | Out-String
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
 }
 function Parsed-Version([string]$text) {
   if ($text -match '(\d+\.\d+\.\d+)') { return [version]$Matches[1] }
@@ -52,9 +88,11 @@ function Find-CompatiblePython {
 
   $launcher = Find-Application @("py.exe", "py")
   if ($launcher) {
-    $registered = & $launcher -0p 2>$null | Out-String
-    foreach ($match in [regex]::Matches($registered, '[A-Za-z]:\\[^\r\n]*?python\.exe')) {
-      [void]$candidates.Add($match.Value.Trim())
+    $launcherResult = Invoke-NativeCapture -exe $launcher -arguments @("-0p")
+    if ($launcherResult.ExitCode -eq 0) {
+      foreach ($match in [regex]::Matches($launcherResult.Output, '[A-Za-z]:\\[^\r\n]*?python\.exe')) {
+        [void]$candidates.Add($match.Value.Trim())
+      }
     }
   }
 
@@ -85,57 +123,102 @@ function Find-CompatiblePython {
   return ""
 }
 function Hash-Of([string]$path) {
-  return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  $stream = [IO.File]::OpenRead($path)
+  try {
+    return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+  } finally {
+    $stream.Dispose()
+    $algorithm.Dispose()
+  }
 }
-function Download-Verified([string]$uri, [string]$target, [string]$hash) {
+function Acquire-Verified([string]$uri, [string]$target, [string]$hash, [string]$fileName) {
   Assert-RuntimePath $target
   if ((Test-Path -LiteralPath $target) -and (Hash-Of $target) -eq $hash) {
     Write-Host "Using cached $([IO.Path]::GetFileName($target))"
     return
   }
   if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
-  Write-Host "Downloading $uri"
-  Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $target
+  if ($PackageDirectory) {
+    $localPackage = Join-Path ([IO.Path]::GetFullPath($PackageDirectory)) $fileName
+    if (Test-Path -LiteralPath $localPackage) {
+      if ((Hash-Of $localPackage) -ne $hash) { throw "SHA-256 mismatch for local package $localPackage" }
+      Write-Host "Using local package $localPackage"
+      Copy-Item -LiteralPath $localPackage -Destination $target -Force
+    }
+  }
+  if (-not (Test-Path -LiteralPath $target)) {
+    Write-Host "Downloading $uri"
+    Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $uri -OutFile $target
+  }
   if ((Hash-Of $target) -ne $hash) {
     Remove-Item -LiteralPath $target -Force
     throw "SHA-256 mismatch for $uri"
   }
 }
+function Npm-ForNode([string]$nodeExecutable) {
+  if (-not $nodeExecutable) { return "" }
+  $directory = Split-Path -Parent $nodeExecutable
+  foreach ($name in @("npm.cmd", "npm.exe")) {
+    $candidate = Join-Path $directory $name
+    if (Version-Of $candidate) { return $candidate }
+  }
+  return ""
+}
+function Has-ExactVersion([string]$executable, [string]$expected) {
+  $parsed = Parsed-Version (Version-Of $executable)
+  return $parsed -and $parsed -eq [version]$expected
+}
+function Escape-CmdValue([string]$value) { return $value.Replace('%', '%%') }
 
+# Setup execution starts here. Functions above this marker are exercised independently by tests.
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Only 64-bit Windows 10/11 is supported." }
+foreach ($requiredFile in @("requirements-test.txt", ".env.example", "package.json")) {
+  if (-not (Test-Path -LiteralPath (Join-Path $Root $requiredFile))) { throw "Required project file is missing: $requiredFile" }
+}
 New-Item -ItemType Directory -Force -Path $Runtime, $Downloads, $Cache | Out-Null
 
 Step "Detecting Node.js"
 $privateNode = Join-Path $NodeRoot "node.exe"
 $node = ""
+$npm = ""
 $nodeSource = ""
-if ((Parsed-Version (Version-Of $privateNode)) -ge [version]"22.19.0") {
-  $node = $privateNode; $nodeSource = "project-private"
+$privateNpm = Npm-ForNode $privateNode
+if ((Parsed-Version (Version-Of $privateNode)) -ge [version]"22.19.0" -and $privateNpm) {
+  $node = $privateNode; $npm = $privateNpm; $nodeSource = "project-private"
 } else {
   $candidate = Find-Application @("node.exe", "node")
-  if ((Parsed-Version (Version-Of $candidate)) -ge [version]"22.19.0") {
-    $node = $candidate; $nodeSource = "system"
+  $candidateNpm = Npm-ForNode $candidate
+  if ((Parsed-Version (Version-Of $candidate)) -ge [version]"22.19.0" -and $candidateNpm) {
+    $node = $candidate; $npm = $candidateNpm; $nodeSource = "system"
   }
 }
 if (-not $node) {
   Write-Host "Compatible Node.js is missing; installing private v$NodeVersion"
   $archiveName = "node-v$NodeVersion-win-x64.zip"
   $archive = Join-Path $Downloads $archiveName
-  Download-Verified "https://nodejs.org/dist/v$NodeVersion/$archiveName" $archive $NodeHash
+  Acquire-Verified "$NodeDownloadBaseUrl/v$NodeVersion/$archiveName" $archive $NodeHash $archiveName
   $extract = Join-Path $Runtime "node-extract"
   Assert-RuntimePath $extract
   Assert-RuntimePath $NodeRoot
   if (Test-Path $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
   if (Test-Path $NodeRoot) { Remove-Item -LiteralPath $NodeRoot -Recurse -Force }
   Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+  $expandedNode = Join-Path $extract "node-v$NodeVersion-win-x64"
+  foreach ($requiredPath in @("node.exe", "npm.cmd", "node_modules\npm\bin\npm-cli.js")) {
+    if (-not (Test-Path -LiteralPath (Join-Path $expandedNode $requiredPath))) {
+      throw "Node archive has an unexpected layout; missing $requiredPath"
+    }
+  }
   New-Item -ItemType Directory -Force -Path $NodeRoot | Out-Null
-  Copy-Item (Join-Path $extract "node-v$NodeVersion-win-x64\*") $NodeRoot -Recurse -Force
+  Copy-Item (Join-Path $expandedNode "*") $NodeRoot -Recurse -Force
   Remove-Item -LiteralPath $extract -Recurse -Force
-  $node = $privateNode; $nodeSource = "downloaded-private"
+  $node = $privateNode; $npm = Npm-ForNode $privateNode; $nodeSource = "downloaded-private"
 }
 $nodeVersion = Version-Of $node
-if (-not $nodeVersion) { throw "Node.js validation failed" }
+if (-not $nodeVersion -or -not $npm) { throw "Node.js/npm runtime validation failed" }
 Write-Host "Using $nodeVersion ($nodeSource): $node"
+Write-Host "Using npm $(Version-Of $npm): $npm"
 
 Step "Detecting Python"
 $privatePython = Join-Path $PythonRoot "python.exe"
@@ -153,10 +236,18 @@ if (-not $python) {
   Write-Host "Compatible Python is missing; installing private $PythonVersion"
   $installerName = "python-$PythonVersion-amd64.exe"
   $installerPath = Join-Path $Downloads $installerName
-  Download-Verified "https://www.python.org/ftp/python/$PythonVersion/$installerName" $installerPath $PythonHash
-  $signature = Get-AuthenticodeSignature -LiteralPath $installerPath
-  if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Python Software Foundation") {
-    throw "Python installer signature validation failed: $($signature.Status)"
+  Acquire-Verified "$PythonDownloadBaseUrl/$PythonVersion/$installerName" $installerPath $PythonHash $installerName
+  if (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $installerPath
+    $signer = if ($signature.SignerCertificate) { [string]$signature.SignerCertificate.Subject } else { "" }
+    if ($signature.Status -in @("HashMismatch", "NotSigned") -or ($signer -and $signer -notmatch "Python Software Foundation")) {
+      throw "Python installer signature validation failed: status=$($signature.Status), signer=$signer"
+    }
+    if ($signature.Status -ne "Valid") {
+      Write-Warning "Python signature trust status is $($signature.Status); continuing because the pinned SHA-256 matched."
+    }
+  } else {
+    Write-Warning "Authenticode verification is unavailable; continuing because the pinned SHA-256 matched."
   }
   Assert-RuntimePath $PythonRoot
   if (Test-Path -LiteralPath $PythonRoot) { Remove-Item -LiteralPath $PythonRoot -Recurse -Force }
@@ -185,24 +276,25 @@ $env:npm_config_prefix = $NpmPrefix
 $env:npm_config_cache = Join-Path $Cache "npm"
 $env:PIP_CACHE_DIR = Join-Path $Cache "pip"
 $env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
-$npm = Find-Application @("npm.cmd", "npm.exe", "npm")
-if (-not $npm) { throw "npm is unavailable for the selected Node.js runtime" }
+if ($NpmRegistry) { $env:NPM_CONFIG_REGISTRY = $NpmRegistry }
+if ($PipIndexUrl) { $env:PIP_INDEX_URL = $PipIndexUrl }
 
 if (-not $SkipPythonPackages) {
   Step "Checking Python dependencies"
   New-Item -ItemType Directory -Force -Path $PythonPackages | Out-Null
   $env:PYTHONPATH = if ($env:PYTHONPATH) { "$PythonPackages;$env:PYTHONPATH" } else { $PythonPackages }
-  & $python -c "import docx, openpyxl, pptx, requests" 2>$null
-  if ($LASTEXITCODE -eq 0) {
+  $dependencyCheck = "from importlib.metadata import version; expected={'python-docx':'1.2.0','openpyxl':'3.1.5','python-pptx':'1.0.2','requests':'2.32.5'}; raise SystemExit(0 if all(version(k)==v for k,v in expected.items()) else 1)"
+  $importExitCode = Invoke-NativeQuiet -exe $python -arguments @("-c", $dependencyCheck)
+  if ($importExitCode -eq 0) {
     Write-Host "Required Python packages are already available"
   } else {
-    & $python -m pip --version 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $pipExitCode = Invoke-NativeQuiet -exe $python -arguments @("-m", "pip", "--version")
+    if ($pipExitCode -ne 0) {
       Write-Host "pip is missing; bootstrapping it with ensurepip"
       & $python -m ensurepip --upgrade
       if ($LASTEXITCODE -ne 0) { throw "pip bootstrap failed" }
     }
-    & $python -m pip install --target $PythonPackages --requirement (Join-Path $Root "requirements-test.txt")
+    & $python -m pip install --upgrade --target $PythonPackages --requirement (Join-Path $Root "requirements-test.txt")
     if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
   }
 }
@@ -211,15 +303,17 @@ Step "Checking Pi and OpenCode"
 New-Item -ItemType Directory -Force -Path $NpmPrefix | Out-Null
 $privatePi = Join-Path $NpmPrefix "pi.cmd"
 $privateOpenCode = Join-Path $NpmPrefix "opencode.cmd"
-$pi = if (Version-Of $privatePi) { $privatePi } else { Find-Application @("pi.cmd", "pi.exe", "pi") }
-$opencode = if (Version-Of $privateOpenCode) { $privateOpenCode } else { Find-Application @("opencode.cmd", "opencode.exe", "opencode") }
-if (-not (Version-Of $pi)) {
+$systemPi = Find-Application @("pi.cmd", "pi.exe", "pi")
+$systemOpenCode = Find-Application @("opencode.cmd", "opencode.exe", "opencode")
+$pi = if (Has-ExactVersion $privatePi $PiVersion) { $privatePi } elseif (Has-ExactVersion $systemPi $PiVersion) { $systemPi } else { "" }
+$opencode = if (Has-ExactVersion $privateOpenCode $OpenCodeVersion) { $privateOpenCode } elseif (Has-ExactVersion $systemOpenCode $OpenCodeVersion) { $systemOpenCode } else { "" }
+if (-not $pi) {
   Write-Host "Pi is missing; installing $PiVersion into the project runtime"
   & $npm install --global --ignore-scripts --no-audit --no-fund "@earendil-works/pi-coding-agent@$PiVersion"
   if ($LASTEXITCODE -ne 0) { throw "Pi installation failed" }
   $pi = $privatePi
 }
-if (-not (Version-Of $opencode)) {
+if (-not $opencode) {
   Write-Host "OpenCode is missing; installing $OpenCodeVersion into the project runtime"
   & $npm install --global --no-audit --no-fund "opencode-ai@$OpenCodeVersion"
   if ($LASTEXITCODE -ne 0) { throw "OpenCode installation failed" }
@@ -227,19 +321,24 @@ if (-not (Version-Of $opencode)) {
 }
 $piVersion = Version-Of $pi
 $openCodeVersion = Version-Of $opencode
-if (-not $piVersion -or -not $openCodeVersion) { throw "Agent engine validation failed" }
+if (-not (Has-ExactVersion $pi $PiVersion) -or -not (Has-ExactVersion $opencode $OpenCodeVersion)) {
+  throw "Agent engine version validation failed; expected Pi $PiVersion and OpenCode $OpenCodeVersion"
+}
 
 $cmd = @(
   '@echo off',
-  ('set "NODE_COMMAND={0}"' -f $node),
-  ('set "PYTHON_COMMAND={0}"' -f $python),
-  ('set "PI_COMMAND={0}"' -f $pi),
-  ('set "OPENCODE_COMMAND={0}"' -f $opencode),
-  ('set "PYTHONPATH={0};%PYTHONPATH%"' -f $PythonPackages),
-  ('set "PATH={0};{1};{2};{3};%PATH%"' -f $nodeDir, $pythonDir, (Join-Path $pythonDir 'Scripts'), $NpmPrefix),
+  ('set "NODE_COMMAND={0}"' -f (Escape-CmdValue $node)),
+  ('set "PYTHON_COMMAND={0}"' -f (Escape-CmdValue $python)),
+  ('set "PI_COMMAND={0}"' -f (Escape-CmdValue $pi)),
+  ('set "OPENCODE_COMMAND={0}"' -f (Escape-CmdValue $opencode)),
+  ('set "PYTHONPATH={0};%PYTHONPATH%"' -f (Escape-CmdValue $PythonPackages)),
+  ('set "PATH={0};{1};{2};{3};%PATH%"' -f (Escape-CmdValue $nodeDir), (Escape-CmdValue $pythonDir), (Escape-CmdValue (Join-Path $pythonDir 'Scripts')), (Escape-CmdValue $NpmPrefix)),
   'set "PYTHONUTF8=1"'
 )
-$cmd | Set-Content -LiteralPath (Join-Path $Runtime "runtime-env.cmd") -Encoding ASCII
+$environmentFile = Join-Path $Runtime "runtime-env.cmd"
+$environmentTemp = Join-Path $Runtime "runtime-env.cmd.tmp"
+$cmd | Set-Content -LiteralPath $environmentTemp -Encoding ASCII
+Move-Item -LiteralPath $environmentTemp -Destination $environmentFile -Force
 
 $envFile = Join-Path $Root ".env"
 if (-not (Test-Path $envFile)) {
@@ -247,13 +346,16 @@ if (-not (Test-Path $envFile)) {
   Write-Host "Created .env from .env.example"
 }
 
-[ordered]@{
+$manifest = [ordered]@{
   node=$nodeVersion; nodeCommand=$node; nodeSource=$nodeSource
   python=$pythonVersion; pythonCommand=$python; pythonSource=$pythonSource
   pi=$piVersion; piCommand=$pi
   opencode=$openCodeVersion; opencodeCommand=$opencode
   preparedAt=(Get-Date).ToUniversalTime().ToString("o")
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Runtime "runtime.json") -Encoding UTF8
+}
+$manifestTemp = Join-Path $Runtime "runtime.json.tmp"
+$manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestTemp -Encoding UTF8
+Move-Item -LiteralPath $manifestTemp -Destination (Join-Path $Runtime "runtime.json") -Force
 
 Step "Environment is ready"
 Write-Host "Node:     $node ($nodeVersion)"

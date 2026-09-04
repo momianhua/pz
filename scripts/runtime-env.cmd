@@ -14,6 +14,18 @@ if not exist "%NODE_COMMAND%" (
   echo [ERROR] Configured Node.js is unavailable. Run setup.cmd again.
   exit /b 2
 )
+if not exist "%PYTHON_COMMAND%" (
+  echo [ERROR] Configured Python is unavailable. Run setup.cmd again.
+  exit /b 2
+)
+if not exist "%PI_COMMAND%" (
+  echo [ERROR] Configured Pi is unavailable. Run setup.cmd again.
+  exit /b 2
+)
+if not exist "%OPENCODE_COMMAND%" (
+  echo [ERROR] Configured OpenCode is unavailable. Run setup.cmd again.
+  exit /b 2
+)
 set "npm_config_prefix=%PRIVATE_NPM_PREFIX%"
 set "npm_config_cache=%PRIVATE_RUNTIME%\cache\npm"
 set "PIP_CACHE_DIR=%PRIVATE_RUNTIME%\cache\pip"

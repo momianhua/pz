@@ -15,18 +15,29 @@
 
 这是唯一的环境准备命令：它优先复用满足要求的现有 Node.js、Python、Pi 和 OpenCode；缺少时自动将固定版本安装到 `.runtime/`；同时检查并安装 Office 测试依赖，它不修改系统 PATH，重复执行安全且会复用已有环境。本项目为原生 Node.js ESM，无编译步骤。
 
+无公网时，可将 `node-v22.23.2-win-x64.zip` 和 `python-3.12.10-amd64.exe` 放入同一内网目录，并在执行前配置：
+
+```powershell
+$env:RUNTIME_PACKAGE_DIR = "D:\packages"
+$env:NPM_CONFIG_REGISTRY = "http://<内网NPM源>"
+$env:PIP_INDEX_URL = "http://<内网PyPI源>/simple"
+.\setup.cmd
+```
+
+也可通过 `NODE_DOWNLOAD_BASE_URL` 和 `PYTHON_DOWNLOAD_BASE_URL` 指定内网下载根地址。所有 Node/Python 安装包仍执行固定 SHA-256 校验。
+
 ## 2. 模型配置
 
 编辑 `.env`。OpenAI 兼容模型的最小真实运行配置如下：
 
 ```dotenv
-// 模型服务地址
+# 模型服务地址
 LOCAL_MODEL_BASE_URL=http://aigateway.huawei.com/v1
-// 模型名称，连接时需填写的模型名称
+# 模型名称，连接时需填写的模型名称
 LOCAL_MODEL_ID=GLM-V5_1-DX
-// 请求头Authorization的值，用于鉴权
-LOCAL_MODEL_API_KEY=Bearer sk-7xxxxxxxx
-// 会话超时时间，发送消息时未返回结果，最多等待的时间
+# API Key；标准鉴权会自动生成 Authorization: Bearer <API Key>
+LOCAL_MODEL_API_KEY=sk-7xxxxxxxx
+# 会话超时时间，发送消息时未返回结果，最多等待的时间
 RUN_TIMEOUT_MS=600000
 ```
 
