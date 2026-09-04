@@ -13,7 +13,15 @@ Windows 10/11 的全新沙箱只需要能够联网并带有系统自带的 Windo
 .\gateway.cmd --engine opencode
 ```
 
-`setup.cmd` 是唯一的环境准备入口。它优先复用满足要求的系统或项目环境；缺少时将 Node.js `22.23.2`、Python `3.12.10`、Pi `0.84.4`、OpenCode `1.18.25` 安装到 `.runtime/`；随后检查 Python/Office 依赖并自动创建缺失的 `.env`。下载文件使用固定 SHA-256 校验，`.runtime/` 不提交 Git，也不修改系统 PATH。
+`setup.cmd` 是唯一的依赖准备入口。它优先复用满足要求的系统或项目环境；缺少时将 Node.js `22.23.2`、Python `3.12.10`、Pi `0.84.4`、OpenCode `1.18.25` 安装到 `.runtime/`，随后检查 Python/Office 依赖。它绝不会创建、覆盖或修改用户的 `.env`。下载文件使用固定 SHA-256 校验，`.runtime/` 不提交 Git，也不修改系统 PATH。
+
+可选安装用户级全局命令：
+
+```powershell
+.\setup.cmd -InstallGlobalCommand
+```
+
+重新打开终端后，可以在任意目录运行 `gateway --engine opencode` 或 `gateway --engine pi`。默认代理目录为 `%LOCALAPPDATA%\pz-gateway\bin`；可在安装前通过 `GATEWAY_GLOBAL_BIN_DIR` 指定其他目录。注册过程不会覆盖同名的非本项目命令。
 
 私有环境完整自检：
 
@@ -158,10 +166,10 @@ curl -X POST http://localhost:6217/api/sessions/group-a/switch \
 
 ## 连接真实引擎
 
-复制配置：
+`setup.cmd` 不修改模型配置。首次使用且 `.env` 不存在时，可安全地从模板创建：
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 将 `.env` 中的 `ENGINE_MODE` 改为 `real`。

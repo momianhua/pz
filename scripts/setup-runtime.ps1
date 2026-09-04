@@ -1,11 +1,13 @@
 [CmdletBinding()]
 param(
   [switch]$SkipPythonPackages,
+  [switch]$InstallGlobalCommand,
   [string]$PackageDirectory = $env:RUNTIME_PACKAGE_DIR,
   [string]$NodeDownloadBaseUrl = $env:NODE_DOWNLOAD_BASE_URL,
   [string]$PythonDownloadBaseUrl = $env:PYTHON_DOWNLOAD_BASE_URL,
   [string]$NpmRegistry = $env:NPM_CONFIG_REGISTRY,
-  [string]$PipIndexUrl = $env:PIP_INDEX_URL
+  [string]$PipIndexUrl = $env:PIP_INDEX_URL,
+  [string]$GlobalBinDirectory = $env:GATEWAY_GLOBAL_BIN_DIR
 )
 
 $ErrorActionPreference = "Stop"
@@ -173,6 +175,74 @@ function Has-ExactVersion([string]$executable, [string]$expected) {
   return $parsed -and $parsed -eq [version]$expected
 }
 function Escape-CmdValue([string]$value) { return $value.Replace('%', '%%') }
+function Install-GatewayCommand([string]$binDirectory, [bool]$persistUserPath) {
+  if (-not $binDirectory) {
+    $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if (-not $localAppData) { throw "Cannot resolve the current user's LocalApplicationData directory" }
+    $binDirectory = Join-Path $localAppData "pz-gateway\bin"
+  }
+  $binDirectory = [IO.Path]::GetFullPath($binDirectory)
+  $commandPath = Join-Path $binDirectory "gateway.cmd"
+  $scriptPath = Join-Path $binDirectory "gateway.ps1"
+  $marker = "pz-agent-gateway managed launcher"
+
+  if ($persistUserPath) {
+    $projectCommand = [IO.Path]::GetFullPath((Join-Path $Root "gateway.cmd"))
+    $existingCommands = @(Get-Command gateway.cmd, gateway.exe, gateway -CommandType Application -All -ErrorAction SilentlyContinue)
+    foreach ($existing in $existingCommands) {
+      $existingPath = [IO.Path]::GetFullPath($existing.Source)
+      if ($existingPath -ne $commandPath -and $existingPath -ne $projectCommand) {
+        throw "A different global gateway command already exists at $existingPath. Refusing to shadow it."
+      }
+    }
+  }
+
+  foreach ($managedPath in @($commandPath, $scriptPath)) {
+    if (-not (Test-Path -LiteralPath $managedPath)) { continue }
+    $existingContent = Get-Content -LiteralPath $managedPath -Raw
+    if ($existingContent -notmatch [regex]::Escape($marker)) {
+      throw "Refusing to overwrite unmanaged command file: $managedPath"
+    }
+  }
+
+  New-Item -ItemType Directory -Force -Path $binDirectory | Out-Null
+  $projectLauncher = [IO.Path]::GetFullPath((Join-Path $Root "gateway.cmd"))
+  if (-not (Test-Path -LiteralPath $projectLauncher)) { throw "Project launcher is missing: $projectLauncher" }
+  $escapedProjectLauncher = $projectLauncher.Replace("'", "''")
+  $powerShellLines = @(
+    "# $marker",
+    "`$projectLauncher = '$escapedProjectLauncher'",
+    'if (-not (Test-Path -LiteralPath $projectLauncher)) { Write-Error "Registered gateway project no longer exists: $projectLauncher. Rerun setup.cmd -InstallGlobalCommand from the new project location."; exit 2 }',
+    "& `$projectLauncher @args",
+    "exit `$LASTEXITCODE"
+  )
+  $cmdLines = @(
+    '@echo off',
+    "rem $marker",
+    '"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0gateway.ps1" %*',
+    'exit /b %ERRORLEVEL%'
+  )
+  $scriptTemp = "$scriptPath.tmp"
+  $commandTemp = "$commandPath.tmp"
+  $powerShellLines | Set-Content -LiteralPath $scriptTemp -Encoding UTF8
+  $cmdLines | Set-Content -LiteralPath $commandTemp -Encoding ASCII
+  Move-Item -LiteralPath $scriptTemp -Destination $scriptPath -Force
+  Move-Item -LiteralPath $commandTemp -Destination $commandPath -Force
+
+  if ($persistUserPath) {
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $pathEntries = @($userPath -split ';' | Where-Object { $_ } | ForEach-Object { $_.Trim().TrimEnd('\') })
+    $normalizedBin = $binDirectory.TrimEnd('\')
+    if (-not ($pathEntries | Where-Object { $_.Equals($normalizedBin, [StringComparison]::OrdinalIgnoreCase) })) {
+      [Environment]::SetEnvironmentVariable("Path", ((@($pathEntries) + $binDirectory) -join ';'), "User")
+      Write-Host "Added $binDirectory to the user PATH"
+    } else {
+      Write-Host "User PATH already contains $binDirectory"
+    }
+  }
+  Write-Host "Global gateway command installed: $commandPath"
+  return $commandPath
+}
 
 # Setup execution starts here. Functions above this marker are exercised independently by tests.
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Only 64-bit Windows 10/11 is supported." }
@@ -344,9 +414,10 @@ $cmd | Set-Content -LiteralPath $environmentTemp -Encoding ASCII
 Move-Item -LiteralPath $environmentTemp -Destination $environmentFile -Force
 
 $envFile = Join-Path $Root ".env"
-if (-not (Test-Path $envFile)) {
-  Copy-Item -LiteralPath (Join-Path $Root ".env.example") -Destination $envFile
-  Write-Host "Created .env from .env.example"
+if (Test-Path -LiteralPath $envFile) {
+  Write-Host "Keeping existing .env unchanged"
+} else {
+  Write-Warning ".env does not exist. Create it from .env.example and configure the model before real-mode startup."
 }
 
 $manifest = [ordered]@{
@@ -359,6 +430,12 @@ $manifest = [ordered]@{
 $manifestTemp = Join-Path $Runtime "runtime.json.tmp"
 $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestTemp -Encoding UTF8
 Move-Item -LiteralPath $manifestTemp -Destination (Join-Path $Runtime "runtime.json") -Force
+
+if ($InstallGlobalCommand) {
+  Step "Installing global gateway command"
+  [void](Install-GatewayCommand -binDirectory $GlobalBinDirectory -persistUserPath $true)
+  Write-Host "Open a new terminal, then run: gateway --engine opencode"
+}
 
 Step "Environment is ready"
 Write-Host "Node:     $node ($nodeVersion)"

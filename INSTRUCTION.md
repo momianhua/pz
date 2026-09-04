@@ -15,6 +15,14 @@
 
 这是唯一的环境准备命令：它优先复用满足要求的现有 Node.js、Python、Pi 和 OpenCode；缺少时自动将固定版本安装到 `.runtime/`；同时检查并安装 Office 测试依赖，它不修改系统 PATH，重复执行安全且会复用已有环境。本项目为原生 Node.js ESM，无编译步骤。
 
+如需在任意目录使用 `gateway` 命令，可改为执行：
+
+```powershell
+.\setup.cmd -InstallGlobalCommand
+```
+
+该选项在 `%LOCALAPPDATA%\pz-gateway\bin` 创建用户级代理并加入用户 PATH，不需要管理员权限，也不会覆盖同名第三方命令。首次注册后重新打开终端，执行 `gateway --engine opencode` 或 `gateway --engine pi`。项目目录移动后，在新目录重新执行一次注册命令。
+
 无公网时，可将 `node-v22.23.2-win-x64.zip` 和 `python-3.12.10-amd64.exe` 放入同一内网目录，并在执行前配置：
 
 ```powershell

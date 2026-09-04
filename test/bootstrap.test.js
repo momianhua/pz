@@ -29,8 +29,11 @@ test("Windows bootstrap reuses compatible tools and securely installs missing ru
   assert.match(setup, /Npm-ForNode/);
   assert.match(setup, /Has-ExactVersion/);
   assert.match(setup, /RUNTIME_PACKAGE_DIR/);
+  assert.match(setup, /InstallGlobalCommand/);
+  assert.match(setup, /Install-GatewayCommand/);
   assert.match(setup, /--upgrade --target/);
-  assert.match(setup, /Copy-Item.*\.env\.example/);
+  assert.doesNotMatch(setup, /Copy-Item.*\.env\.example/);
+  assert.match(setup, /Keeping existing \.env unchanged/);
 });
 
 test("Windows native probes use exit codes and keep Node paired with adjacent npm", {
@@ -42,8 +45,12 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
   const tools = join(temporary, "tools");
   const runtime = join(temporary, "runtime");
   const downloads = join(runtime, "downloads");
+  const project = join(temporary, "项目 code");
+  const globalBin = join(temporary, "global-bin");
   await mkdir(tools);
   await mkdir(downloads, { recursive: true });
+  await mkdir(project);
+  await writeFile(join(project, "gateway.cmd"), "@echo off\r\necho project gateway %*\r\n");
   await writeFile(join(tools, "node.cmd"), "@echo off\r\necho v22.23.2\r\n");
   await writeFile(join(tools, "npm.cmd"), "@echo off\r\necho npm warn unknown user config no_proxy 1>&2\r\necho 10.9.8\r\n");
   const offlineContent = "verified-offline-package";
@@ -51,9 +58,12 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
   const offlineHash = createHash("sha256").update(offlineContent).digest("hex");
   const escapedTools = tools.replaceAll("'", "''");
   const escapedRuntime = runtime.replaceAll("'", "''");
-  const probe = `${helpers}\n$Runtime='${escapedRuntime}'\n$PackageDirectory='${escapedTools}'\n$quiet = Invoke-NativeQuiet -exe $env:ComSpec -arguments @('/d','/c','echo expected 1>&2 & exit /b 7')\n$paired = Npm-ForNode '${escapedTools}\\node.cmd'\n$npmVersion = Version-Of $paired\n$exact = Has-ExactVersion '${escapedTools}\\node.cmd' '22.23.2'\nAcquire-Verified 'https://invalid.example/offline.bin' (Join-Path $Runtime 'downloads\\offline.bin') '${offlineHash}' 'offline.bin'\nWrite-Output \"quiet=$quiet\"\nWrite-Output \"paired=$([IO.Path]::GetFileName($paired))\"\nWrite-Output \"npmVersion=$npmVersion\"\nWrite-Output \"exact=$exact\"\nWrite-Output \"offline=$([bool](Test-Path (Join-Path $Runtime 'downloads\\offline.bin')))\"\n`;
+  const escapedProject = project.replaceAll("'", "''");
+  const escapedGlobalBin = globalBin.replaceAll("'", "''");
+  const probe = `${helpers}\n$Runtime='${escapedRuntime}'\n$Root='${escapedProject}'\n$PackageDirectory='${escapedTools}'\n$quiet = Invoke-NativeQuiet -exe $env:ComSpec -arguments @('/d','/c','echo expected 1>&2 & exit /b 7')\n$paired = Npm-ForNode '${escapedTools}\\node.cmd'\n$npmVersion = Version-Of $paired\n$exact = Has-ExactVersion '${escapedTools}\\node.cmd' '22.23.2'\nAcquire-Verified 'https://invalid.example/offline.bin' (Join-Path $Runtime 'downloads\\offline.bin') '${offlineHash}' 'offline.bin'\n$global = Install-GatewayCommand '${escapedGlobalBin}' $false\nWrite-Output \"quiet=$quiet\"\nWrite-Output \"paired=$([IO.Path]::GetFileName($paired))\"\nWrite-Output \"npmVersion=$npmVersion\"\nWrite-Output \"exact=$exact\"\nWrite-Output \"offline=$([bool](Test-Path (Join-Path $Runtime 'downloads\\offline.bin')))\"\nWrite-Output \"global=$([bool](Test-Path $global))\"\n`;
   const probePath = join(temporary, "probe.ps1");
-  await writeFile(probePath, probe);
+  // Windows PowerShell 5.1 needs a UTF-8 BOM to decode non-ASCII script paths.
+  await writeFile(probePath, `\uFEFF${probe}`);
   try {
     const powershell = join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     const result = spawnSync(powershell, ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", probePath], { encoding: "utf8" });
@@ -64,6 +74,17 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
     assert.doesNotMatch(result.stdout, /NativeCommandError/i);
     assert.match(result.stdout, /exact=True/i);
     assert.match(result.stdout, /offline=True/i);
+    assert.match(result.stdout, /global=True/i);
+    const globalScript = await readFile(join(globalBin, "gateway.ps1"), "utf8");
+    assert.match(globalScript, /pz-agent-gateway managed launcher/);
+    assert.match(globalScript, /项目 code/);
+    const globalRun = spawnSync(process.env.ComSpec, ["/d", "/c", "gateway --engine opencode"], {
+      cwd: temporary,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${globalBin};${process.env.PATH}` },
+    });
+    assert.equal(globalRun.status, 0, globalRun.stderr);
+    assert.match(globalRun.stdout, /project gateway --engine opencode/);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
