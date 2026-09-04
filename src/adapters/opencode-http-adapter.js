@@ -117,6 +117,14 @@ export function openCodeErrorMessage(error) {
   return name || "OpenCode session failed";
 }
 
+export function openCodeAgentName(agent) {
+  if (typeof agent !== "string") return undefined;
+  const name = agent.trim();
+  // "assistant" is the gateway protocol's default role, not an OpenCode
+  // native agent. Omitting it lets OpenCode choose its configured default.
+  return !name || name.toLowerCase() === "assistant" ? undefined : name;
+}
+
 export function mapOpenCodeEvent(payload, runId) {
   const type = payload?.type;
   const properties = payload?.properties ?? {};
@@ -377,7 +385,8 @@ export class OpenCodeHttpAdapter extends EngineAdapter {
         }
       })();
 
-      const requestBody = { parts: [{ type: "text", text: contextualInput }], ...(agent ? { agent } : {}) };
+      const nativeAgent = openCodeAgentName(agent);
+      const requestBody = { parts: [{ type: "text", text: contextualInput }], ...(nativeAgent ? { agent: nativeAgent } : {}) };
       const selectedModel = model?.providerID && model?.modelID ? model : (this.providerId && this.modelId
         ? { providerID: this.providerId, modelID: this.modelId }
         : null);

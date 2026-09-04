@@ -4,7 +4,7 @@ import { PassThrough, Readable } from "node:stream";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { attachStrictJsonlReader, mapPiEvent } from "../src/adapters/pi-rpc-adapter.js";
-import { OpenCodeHttpAdapter, mapOpenCodeEvent, openCodeErrorMessage, parseSse } from "../src/adapters/opencode-http-adapter.js";
+import { OpenCodeHttpAdapter, mapOpenCodeEvent, openCodeAgentName, openCodeErrorMessage, parseSse } from "../src/adapters/opencode-http-adapter.js";
 import { collectEvents } from "../src/core/events.js";
 
 test("Pi JSONL parser splits only on LF and preserves Unicode separators", async () => {
@@ -35,6 +35,14 @@ test("OpenCode nested session errors remain readable", () => {
   const mapped = mapOpenCodeEvent({ type: "session.error", properties: { error: nested } }, "r-error");
   assert.equal(mapped.data.message, "ProviderAuthError: 401 invalid authentication header");
   assert.doesNotMatch(mapped.data.message, /\[object Object\]/);
+});
+
+test("gateway assistant role uses OpenCode's configured default agent", () => {
+  assert.equal(openCodeAgentName("assistant"), undefined);
+  assert.equal(openCodeAgentName(" ASSISTANT "), undefined);
+  assert.equal(openCodeAgentName(undefined), undefined);
+  assert.equal(openCodeAgentName("build"), "build");
+  assert.equal(openCodeAgentName("general"), "general");
 });
 
 test("OpenCode SSE parser supports named events and multiline data", async () => {
