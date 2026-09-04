@@ -15,14 +15,6 @@
 
 这是唯一的环境准备命令：它优先复用满足要求的现有 Node.js、Python、Pi 和 OpenCode；缺少时自动将固定版本安装到 `.runtime/`；同时检查并安装 Office 测试依赖，它不修改系统 PATH，重复执行安全且会复用已有环境。本项目为原生 Node.js ESM，无编译步骤。
 
-如需在任意目录使用 `gateway` 命令，可改为执行：
-
-```powershell
-.\setup.cmd -InstallGlobalCommand
-```
-
-该选项在 `%LOCALAPPDATA%\pz-gateway\bin` 创建用户级代理并加入用户 PATH，不需要管理员权限，也不会覆盖同名第三方命令。首次注册后重新打开终端，执行 `gateway --engine opencode` 或 `gateway --engine pi`。项目目录移动后，在新目录重新执行一次注册命令。
-
 无公网时，可将 `node-v22.23.2-win-x64.zip` 和 `python-3.12.10-amd64.exe` 放入同一内网目录，并在执行前配置：
 
 ```powershell
@@ -33,26 +25,6 @@ $env:PIP_INDEX_URL = "http://<内网PyPI源>/simple"
 ```
 
 也可通过 `NODE_DOWNLOAD_BASE_URL` 和 `PYTHON_DOWNLOAD_BASE_URL` 指定内网下载根地址。所有 Node/Python 安装包仍执行固定 SHA-256 校验。
-
-如需在标准依赖安装完成后执行自有内网 BAT，可任选一种方式：
-
-```powershell
-.\setup.cmd -PostSetupScript ".\internal\install.bat"
-```
-
-或先设置当前终端环境变量（相对路径以源代码目录为准）：
-
-```powershell
-$env:POST_SETUP_SCRIPT = ".\internal\install.bat"
-.\setup.cmd
-```
-
-该脚本最后执行，并继承 setup 准备好的 Node、Python、Pi、OpenCode 和 PATH 环境；退出码非 0 时 setup 会失败。此配置不是 `.env` 模型配置，无需把内网脚本提交到 Git。
-
-如果需要安装welink-cli, 可在solution/code源代码目录下执行：
-```cwd
-.\welink-cli\install-welink-cli.bat
-```
 
 ## 2. 模型配置
 
