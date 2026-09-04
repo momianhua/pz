@@ -176,6 +176,29 @@ function Has-ExactVersion([string]$executable, [string]$expected) {
   return $parsed -and $parsed -eq [version]$expected
 }
 function Escape-CmdValue([string]$value) { return $value.Replace('%', '%%') }
+function Read-SetupEnvironment([string]$path) {
+  $values = @{}
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $values }
+  $lineNumber = 0
+  foreach ($line in [IO.File]::ReadAllLines($path, [Text.UTF8Encoding]::new($false, $true))) {
+    $lineNumber++
+    if ($line -match '^\s*(?:#.*)?$') { continue }
+    if ($line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') {
+      throw "Invalid .setup.env entry at line ${lineNumber}: $line"
+    }
+    $name = $Matches[1]
+    $value = $Matches[2]
+    if ($value.Length -ge 2) {
+      $first = $value[0]
+      $last = $value[$value.Length - 1]
+      if (($first -eq '"' -and $last -eq '"') -or ($first -eq "'" -and $last -eq "'")) {
+        $value = $value.Substring(1, $value.Length - 2)
+      }
+    }
+    $values[$name] = $value
+  }
+  return $values
+}
 function Invoke-PostSetupScript([string]$script) {
   if (-not $script) { return }
   $script = [Environment]::ExpandEnvironmentVariables($script.Trim().Trim('"'))
@@ -277,6 +300,12 @@ function Install-GatewayCommand([string]$binDirectory, [bool]$persistUserPath) {
 
 # Setup execution starts here. Functions above this marker are exercised independently by tests.
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Only 64-bit Windows 10/11 is supported." }
+$setupEnvironmentFile = Join-Path $Root ".setup.env"
+$setupEnvironment = Read-SetupEnvironment $setupEnvironmentFile
+if (-not $PostSetupScript -and $setupEnvironment.ContainsKey('POST_SETUP_SCRIPT')) {
+  $PostSetupScript = [string]$setupEnvironment['POST_SETUP_SCRIPT']
+  Write-Host "Using POST_SETUP_SCRIPT from $setupEnvironmentFile"
+}
 foreach ($requiredFile in @("requirements-test.txt", ".env.example", "package.json")) {
   if (-not (Test-Path -LiteralPath (Join-Path $Root $requiredFile))) { throw "Required project file is missing: $requiredFile" }
 }
