@@ -15,6 +15,8 @@ Windows 10/11 的全新沙箱只需要能够联网并带有系统自带的 Windo
 
 `setup.cmd` 是唯一的依赖准备入口。它优先复用满足要求的系统或项目环境；缺少时将 Node.js `22.23.2`、Python `3.12.10`、Pi `0.84.4`、OpenCode `1.18.25` 安装到 `.runtime/`，随后检查 Python/Office 依赖。它绝不会创建、覆盖或修改用户的 `.env`。下载文件使用固定 SHA-256 校验，`.runtime/` 不提交 Git，也不修改系统 PATH。
 
+如需在全部标准依赖准备完成后执行内网 BAT，可运行 `.\setup.cmd -PostSetupScript ".\internal\install.bat"`，或在当前终端设置 `POST_SETUP_SCRIPT` 后运行 `.\setup.cmd`。相对路径按项目根目录解析，脚本非零退出码会令 setup 失败。
+
 可选安装用户级全局命令：
 
 ```powershell

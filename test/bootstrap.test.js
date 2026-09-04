@@ -31,6 +31,9 @@ test("Windows bootstrap reuses compatible tools and securely installs missing ru
   assert.match(setup, /RUNTIME_PACKAGE_DIR/);
   assert.match(setup, /InstallGlobalCommand/);
   assert.match(setup, /Install-GatewayCommand/);
+  assert.match(setup, /POST_SETUP_SCRIPT/);
+  assert.match(setup, /Invoke-PostSetupScript/);
+  assert.match(setup, /Post-setup script failed with exit code/);
   assert.match(setup, /--upgrade --target/);
   assert.doesNotMatch(setup, /Copy-Item.*\.env\.example/);
   assert.match(setup, /Keeping existing \.env unchanged/);
@@ -51,6 +54,7 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
   await mkdir(downloads, { recursive: true });
   await mkdir(project);
   await writeFile(join(project, "gateway.cmd"), "@echo off\r\necho project gateway %*\r\n");
+  await writeFile(join(project, "internal install.bat"), "@echo off\r\necho post-setup-ok\r\nexit /b 0\r\n");
   await writeFile(join(tools, "node.cmd"), "@echo off\r\necho v22.23.2\r\n");
   await writeFile(join(tools, "npm.cmd"), "@echo off\r\necho npm warn unknown user config no_proxy 1>&2\r\necho 10.9.8\r\n");
   const offlineContent = "verified-offline-package";
@@ -60,7 +64,7 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
   const escapedRuntime = runtime.replaceAll("'", "''");
   const escapedProject = project.replaceAll("'", "''");
   const escapedGlobalBin = globalBin.replaceAll("'", "''");
-  const probe = `${helpers}\n$Runtime='${escapedRuntime}'\n$Root='${escapedProject}'\n$PackageDirectory='${escapedTools}'\n$quiet = Invoke-NativeQuiet -exe $env:ComSpec -arguments @('/d','/c','echo expected 1>&2 & exit /b 7')\n$paired = Npm-ForNode '${escapedTools}\\node.cmd'\n$npmVersion = Version-Of $paired\n$exact = Has-ExactVersion '${escapedTools}\\node.cmd' '22.23.2'\nAcquire-Verified 'https://invalid.example/offline.bin' (Join-Path $Runtime 'downloads\\offline.bin') '${offlineHash}' 'offline.bin'\n$global = Install-GatewayCommand '${escapedGlobalBin}' $false\nWrite-Output \"quiet=$quiet\"\nWrite-Output \"paired=$([IO.Path]::GetFileName($paired))\"\nWrite-Output \"npmVersion=$npmVersion\"\nWrite-Output \"exact=$exact\"\nWrite-Output \"offline=$([bool](Test-Path (Join-Path $Runtime 'downloads\\offline.bin')))\"\nWrite-Output \"global=$([bool](Test-Path $global))\"\n`;
+  const probe = `${helpers}\n$Runtime='${escapedRuntime}'\n$Root='${escapedProject}'\n$PackageDirectory='${escapedTools}'\n$quiet = Invoke-NativeQuiet -exe $env:ComSpec -arguments @('/d','/c','echo expected 1>&2 & exit /b 7')\n$paired = Npm-ForNode '${escapedTools}\\node.cmd'\n$npmVersion = Version-Of $paired\n$exact = Has-ExactVersion '${escapedTools}\\node.cmd' '22.23.2'\nAcquire-Verified 'https://invalid.example/offline.bin' (Join-Path $Runtime 'downloads\\offline.bin') '${offlineHash}' 'offline.bin'\n$global = Install-GatewayCommand '${escapedGlobalBin}' $false\nInvoke-PostSetupScript '.\\internal install.bat'\nWrite-Output \"quiet=$quiet\"\nWrite-Output \"paired=$([IO.Path]::GetFileName($paired))\"\nWrite-Output \"npmVersion=$npmVersion\"\nWrite-Output \"exact=$exact\"\nWrite-Output \"offline=$([bool](Test-Path (Join-Path $Runtime 'downloads\\offline.bin')))\"\nWrite-Output \"global=$([bool](Test-Path $global))\"\n`;
   const probePath = join(temporary, "probe.ps1");
   // Windows PowerShell 5.1 needs a UTF-8 BOM to decode non-ASCII script paths.
   await writeFile(probePath, `\uFEFF${probe}`);
@@ -75,6 +79,7 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
     assert.match(result.stdout, /exact=True/i);
     assert.match(result.stdout, /offline=True/i);
     assert.match(result.stdout, /global=True/i);
+    assert.match(result.stdout, /post-setup-ok/i);
     const globalScript = await readFile(join(globalBin, "gateway.ps1"), "utf8");
     assert.match(globalScript, /pz-agent-gateway managed launcher/);
     assert.match(globalScript, /项目 code/);

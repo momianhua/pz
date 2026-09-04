@@ -7,7 +7,8 @@ param(
   [string]$PythonDownloadBaseUrl = $env:PYTHON_DOWNLOAD_BASE_URL,
   [string]$NpmRegistry = $env:NPM_CONFIG_REGISTRY,
   [string]$PipIndexUrl = $env:PIP_INDEX_URL,
-  [string]$GlobalBinDirectory = $env:GATEWAY_GLOBAL_BIN_DIR
+  [string]$GlobalBinDirectory = $env:GATEWAY_GLOBAL_BIN_DIR,
+  [string]$PostSetupScript = $env:POST_SETUP_SCRIPT
 )
 
 $ErrorActionPreference = "Stop"
@@ -175,6 +176,36 @@ function Has-ExactVersion([string]$executable, [string]$expected) {
   return $parsed -and $parsed -eq [version]$expected
 }
 function Escape-CmdValue([string]$value) { return $value.Replace('%', '%%') }
+function Invoke-PostSetupScript([string]$script) {
+  if (-not $script) { return }
+  $script = [Environment]::ExpandEnvironmentVariables($script.Trim().Trim('"'))
+  $scriptPath = if ([IO.Path]::IsPathRooted($script)) {
+    [IO.Path]::GetFullPath($script)
+  } else {
+    [IO.Path]::GetFullPath((Join-Path $Root $script))
+  }
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw "Post-setup script was not found: $scriptPath"
+  }
+  if ([IO.Path]::GetExtension($scriptPath) -notin @('.bat', '.cmd')) {
+    throw "Post-setup script must be a .bat or .cmd file: $scriptPath"
+  }
+
+  Write-Host "Running post-setup script: $scriptPath"
+  $previousPreference = $ErrorActionPreference
+  Push-Location $Root
+  try {
+    $ErrorActionPreference = 'Continue'
+    & $env:ComSpec /d /s /c "call `"$scriptPath`""
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+    Pop-Location
+  }
+  if ($exitCode -ne 0) {
+    throw "Post-setup script failed with exit code ${exitCode}: $scriptPath"
+  }
+}
 function Install-GatewayCommand([string]$binDirectory, [bool]$persistUserPath) {
   if (-not $binDirectory) {
     $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
@@ -435,6 +466,11 @@ if ($InstallGlobalCommand) {
   Step "Installing global gateway command"
   [void](Install-GatewayCommand -binDirectory $GlobalBinDirectory -persistUserPath $true)
   Write-Host "Open a new terminal, then run: gateway --engine opencode"
+}
+
+if ($PostSetupScript) {
+  Step "Running custom post-setup installation"
+  Invoke-PostSetupScript $PostSetupScript
 }
 
 Step "Environment is ready"

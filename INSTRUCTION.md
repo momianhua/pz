@@ -34,6 +34,21 @@ $env:PIP_INDEX_URL = "http://<内网PyPI源>/simple"
 
 也可通过 `NODE_DOWNLOAD_BASE_URL` 和 `PYTHON_DOWNLOAD_BASE_URL` 指定内网下载根地址。所有 Node/Python 安装包仍执行固定 SHA-256 校验。
 
+如需在标准依赖安装完成后执行自有内网 BAT，可任选一种方式：
+
+```powershell
+.\setup.cmd -PostSetupScript ".\internal\install.bat"
+```
+
+或先设置当前终端环境变量（相对路径以源代码目录为准）：
+
+```powershell
+$env:POST_SETUP_SCRIPT = ".\internal\install.bat"
+.\setup.cmd
+```
+
+该脚本最后执行，并继承 setup 准备好的 Node、Python、Pi、OpenCode 和 PATH 环境；退出码非 0 时 setup 会失败。此配置不是 `.env` 模型配置，无需把内网脚本提交到 Git。
+
 如果需要安装welink-cli, 可在solution/code源代码目录下执行：
 ```cwd
 .\welink-cli\install-welink-cli.bat
