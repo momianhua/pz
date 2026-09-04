@@ -45,13 +45,13 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
   await mkdir(tools);
   await mkdir(downloads, { recursive: true });
   await writeFile(join(tools, "node.cmd"), "@echo off\r\necho v22.23.2\r\n");
-  await writeFile(join(tools, "npm.cmd"), "@echo off\r\necho 10.9.8\r\n");
+  await writeFile(join(tools, "npm.cmd"), "@echo off\r\necho npm warn unknown user config no_proxy 1>&2\r\necho 10.9.8\r\n");
   const offlineContent = "verified-offline-package";
   await writeFile(join(tools, "offline.bin"), offlineContent);
   const offlineHash = createHash("sha256").update(offlineContent).digest("hex");
   const escapedTools = tools.replaceAll("'", "''");
   const escapedRuntime = runtime.replaceAll("'", "''");
-  const probe = `${helpers}\n$Runtime='${escapedRuntime}'\n$PackageDirectory='${escapedTools}'\n$quiet = Invoke-NativeQuiet -exe $env:ComSpec -arguments @('/d','/c','echo expected 1>&2 & exit /b 7')\n$paired = Npm-ForNode '${escapedTools}\\node.cmd'\n$exact = Has-ExactVersion '${escapedTools}\\node.cmd' '22.23.2'\nAcquire-Verified 'https://invalid.example/offline.bin' (Join-Path $Runtime 'downloads\\offline.bin') '${offlineHash}' 'offline.bin'\nWrite-Output \"quiet=$quiet\"\nWrite-Output \"paired=$([IO.Path]::GetFileName($paired))\"\nWrite-Output \"exact=$exact\"\nWrite-Output \"offline=$([bool](Test-Path (Join-Path $Runtime 'downloads\\offline.bin')))\"\n`;
+  const probe = `${helpers}\n$Runtime='${escapedRuntime}'\n$PackageDirectory='${escapedTools}'\n$quiet = Invoke-NativeQuiet -exe $env:ComSpec -arguments @('/d','/c','echo expected 1>&2 & exit /b 7')\n$paired = Npm-ForNode '${escapedTools}\\node.cmd'\n$npmVersion = Version-Of $paired\n$exact = Has-ExactVersion '${escapedTools}\\node.cmd' '22.23.2'\nAcquire-Verified 'https://invalid.example/offline.bin' (Join-Path $Runtime 'downloads\\offline.bin') '${offlineHash}' 'offline.bin'\nWrite-Output \"quiet=$quiet\"\nWrite-Output \"paired=$([IO.Path]::GetFileName($paired))\"\nWrite-Output \"npmVersion=$npmVersion\"\nWrite-Output \"exact=$exact\"\nWrite-Output \"offline=$([bool](Test-Path (Join-Path $Runtime 'downloads\\offline.bin')))\"\n`;
   const probePath = join(temporary, "probe.ps1");
   await writeFile(probePath, probe);
   try {
@@ -60,6 +60,8 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /quiet=7/);
     assert.match(result.stdout, /paired=npm\.cmd/i);
+    assert.match(result.stdout, /npmVersion=10\.9\.8/i);
+    assert.doesNotMatch(result.stdout, /NativeCommandError/i);
     assert.match(result.stdout, /exact=True/i);
     assert.match(result.stdout, /offline=True/i);
   } finally {

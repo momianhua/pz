@@ -42,7 +42,10 @@ function Version-Of([string]$exe) {
   $previousPreference = $ErrorActionPreference
   try {
     $ErrorActionPreference = "Continue"
-    $value = & $exe --version 2>&1 | Out-String
+    # npm and other CLIs may emit non-fatal configuration warnings on stderr.
+    # Only stdout is version data; suppress stderr so Windows PowerShell 5.1
+    # does not turn a harmless warning into a NativeCommandError record.
+    $value = & $exe --version 2>$null | Out-String
     $exitCode = $LASTEXITCODE
   } finally {
     $ErrorActionPreference = $previousPreference
