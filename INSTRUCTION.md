@@ -7,18 +7,9 @@
 - 网络：首次安装依赖和访问模型服务时可联网
 - 初始依赖：Windows PowerShell（无需预装 Node.js、Python、Pi、OpenCode，无需管理员权限）
 
-如果已有对应node和python环境，则执行：
-```cwd
-npm install -g @earendil-works/pi-coding-agent@0.84.4
-npm install -g opencode-ai@1.18.25
-```
+依赖安装：
 在solution/code源代码目录下执行：
 ```cwd
-python -m pip install -r requirements-test.txt
-```
-
-如果没有对应node和python环境，已连接外网可直接下载环境，在solution/code源代码目录下执行：
-```powershell
 .\setup.cmd
 ```
 
@@ -38,8 +29,6 @@ LOCAL_MODEL_API_KEY=Bearer sk-7xxxxxxxx
 // 会话超时时间，发送消息时未返回结果，最多等待的时间
 RUN_TIMEOUT_MS=600000
 ```
-
-正式评测使用赛事提供或允许的内部部署模型，并将其实际 ID 配置到 `LOCAL_MODEL_ID`。`PI_PROVIDER/PI_MODEL` 和 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 留空即可继承统一模型配置。
 
 如模型使用自定义鉴权头，再配置：
 
