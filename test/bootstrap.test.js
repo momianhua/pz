@@ -36,8 +36,12 @@ test("Windows bootstrap reuses compatible tools and securely installs missing ru
   assert.match(setup, /POST_SETUP_SCRIPT/);
   assert.match(setup, /ContainsKey\('NPM_CONFIG_REGISTRY'\)/);
   assert.match(setup, /ContainsKey\('PIP_INDEX_URL'\)/);
+  assert.match(setup, /ContainsKey\('PIP_TRUSTED_HOST'\)/);
   assert.match(setup, /Using NPM_CONFIG_REGISTRY from/);
   assert.match(setup, /Using PIP_INDEX_URL from/);
+  assert.match(setup, /Using PIP_TRUSTED_HOST from/);
+  assert.match(setup, /PIP_INDEX_URL uses insecure HTTP/);
+  assert.match(setup, /must not end with a comma/);
   assert.match(setup, /Invoke-PostSetupScript/);
   assert.match(setup, /Post-setup script failed with exit code/);
   assert.match(setup, /--upgrade --target/);
@@ -71,9 +75,12 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
   const escapedProject = project.replaceAll("'", "''");
   const escapedGlobalBin = globalBin.replaceAll("'", "''");
   const probe = `${helpers}\n$Runtime='${escapedRuntime}'\n$Root='${escapedProject}'\n$PackageDirectory='${escapedTools}'\n$quiet = Invoke-NativeQuiet -exe $env:ComSpec -arguments @('/d','/c','echo expected 1>&2 & exit /b 7')\n$paired = Npm-ForNode '${escapedTools}\\node.cmd'\n$npmVersion = Version-Of $paired\n$exact = Has-ExactVersion '${escapedTools}\\node.cmd' '22.23.2'\nAcquire-Verified 'https://invalid.example/offline.bin' (Join-Path $Runtime 'downloads\\offline.bin') '${offlineHash}' 'offline.bin'\n$global = Install-GatewayCommand '${escapedGlobalBin}' $false\nInvoke-PostSetupScript '.\\internal install.bat'\nWrite-Output \"quiet=$quiet\"\nWrite-Output \"paired=$([IO.Path]::GetFileName($paired))\"\nWrite-Output \"npmVersion=$npmVersion\"\nWrite-Output \"exact=$exact\"\nWrite-Output \"offline=$([bool](Test-Path (Join-Path $Runtime 'downloads\\offline.bin')))\"\nWrite-Output \"global=$([bool](Test-Path $global))\"\n`;
+  const validatedProbe = probe
+    .replace("$exact = Has-ExactVersion", "$sourceValid = $true\nAssert-PackageSource 'http://mirror.internal/simple' 'PIP_INDEX_URL'\ntry { Assert-PackageSource 'http://mirror.internal/simple,' 'PIP_INDEX_URL'; $sourceValid = $false } catch { }\n$exact = Has-ExactVersion")
+    .replace('Write-Output "exact=$exact"', 'Write-Output "sourceValid=$sourceValid"\nWrite-Output "exact=$exact"');
   const probePath = join(temporary, "probe.ps1");
   // Windows PowerShell 5.1 needs a UTF-8 BOM to decode non-ASCII script paths.
-  await writeFile(probePath, `\uFEFF${probe}`);
+  await writeFile(probePath, `\uFEFF${validatedProbe}`);
   try {
     const powershell = join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     const result = spawnSync(powershell, ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", probePath], { encoding: "utf8" });
@@ -82,6 +89,7 @@ test("Windows native probes use exit codes and keep Node paired with adjacent np
     assert.match(result.stdout, /paired=npm\.cmd/i);
     assert.match(result.stdout, /npmVersion=10\.9\.8/i);
     assert.doesNotMatch(result.stdout, /NativeCommandError/i);
+    assert.match(result.stdout, /sourceValid=True/i);
     assert.match(result.stdout, /exact=True/i);
     assert.match(result.stdout, /offline=True/i);
     assert.match(result.stdout, /global=True/i);

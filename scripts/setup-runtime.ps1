@@ -7,6 +7,7 @@ param(
   [string]$PythonDownloadBaseUrl = $env:PYTHON_DOWNLOAD_BASE_URL,
   [string]$NpmRegistry = $env:NPM_CONFIG_REGISTRY,
   [string]$PipIndexUrl = $env:PIP_INDEX_URL,
+  [string]$PipTrustedHost = $env:PIP_TRUSTED_HOST,
   [string]$GlobalBinDirectory = $env:GATEWAY_GLOBAL_BIN_DIR,
   [string]$PostSetupScript = $env:POST_SETUP_SCRIPT
 )
@@ -297,6 +298,15 @@ function Install-GatewayCommand([string]$binDirectory, [bool]$persistUserPath) {
   Write-Host "Global gateway command installed: $commandPath"
   return $commandPath
 }
+function Assert-PackageSource([string]$value, [string]$name) {
+  if (-not $value) { return }
+  $value = $value.Trim()
+  if ($value.EndsWith(',')) { throw "$name must not end with a comma: $value" }
+  $uri = $null
+  if (-not [Uri]::TryCreate($value, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -notin @('http', 'https')) {
+    throw "$name must be an absolute HTTP(S) URL: $value"
+  }
+}
 
 # Setup execution starts here. Functions above this marker are exercised independently by tests.
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Only 64-bit Windows 10/11 is supported." }
@@ -309,6 +319,10 @@ if (-not $NpmRegistry -and $setupEnvironment.ContainsKey('NPM_CONFIG_REGISTRY'))
 if (-not $PipIndexUrl -and $setupEnvironment.ContainsKey('PIP_INDEX_URL')) {
   $PipIndexUrl = [string]$setupEnvironment['PIP_INDEX_URL']
   Write-Host "Using PIP_INDEX_URL from $setupEnvironmentFile"
+}
+if (-not $PipTrustedHost -and $setupEnvironment.ContainsKey('PIP_TRUSTED_HOST')) {
+  $PipTrustedHost = [string]$setupEnvironment['PIP_TRUSTED_HOST']
+  Write-Host "Using PIP_TRUSTED_HOST from $setupEnvironmentFile"
 }
 if (-not $PostSetupScript -and $setupEnvironment.ContainsKey('POST_SETUP_SCRIPT')) {
   $PostSetupScript = [string]$setupEnvironment['POST_SETUP_SCRIPT']
@@ -417,8 +431,17 @@ $env:npm_config_prefix = $NpmPrefix
 $env:npm_config_cache = Join-Path $Cache "npm"
 $env:PIP_CACHE_DIR = Join-Path $Cache "pip"
 $env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
-if ($NpmRegistry) { $env:NPM_CONFIG_REGISTRY = $NpmRegistry }
-if ($PipIndexUrl) { $env:PIP_INDEX_URL = $PipIndexUrl }
+Assert-PackageSource $NpmRegistry 'NPM_CONFIG_REGISTRY'
+Assert-PackageSource $PipIndexUrl 'PIP_INDEX_URL'
+if ($NpmRegistry) { $env:NPM_CONFIG_REGISTRY = $NpmRegistry.Trim() }
+if ($PipIndexUrl) {
+  $pipIndexUri = [Uri]$PipIndexUrl.Trim()
+  if ($pipIndexUri.Scheme -eq 'http' -and -not $PipTrustedHost) {
+    throw "PIP_INDEX_URL uses insecure HTTP. Add PIP_TRUSTED_HOST = `"$($pipIndexUri.Host)`" to .setup.env, or use an HTTPS mirror."
+  }
+  $env:PIP_INDEX_URL = $PipIndexUrl.Trim()
+}
+if ($PipTrustedHost) { $env:PIP_TRUSTED_HOST = $PipTrustedHost.Trim() }
 
 if (-not $SkipPythonPackages) {
   Step "Checking Python dependencies"
