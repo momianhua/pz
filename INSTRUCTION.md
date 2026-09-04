@@ -10,7 +10,7 @@
 依赖安装：
 在solution/code源代码目录下执行：
 ```cwd
-.\setup.cmd
+setup.cmd -InstallGlobalCommand
 ```
 
 这是唯一的环境准备命令：它优先复用满足要求的现有 Node.js、Python、Pi 和 OpenCode；缺少时自动将固定版本安装到 `.runtime/`；同时检查并安装 Office 测试依赖，它不修改系统 PATH，重复执行安全且会复用已有环境。本项目为原生 Node.js ESM，无编译步骤。
